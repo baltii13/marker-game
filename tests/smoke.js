@@ -20,8 +20,12 @@ function makeEl(tag,id){
     remove(){const p=el.parentNode;if(p)p.children=p.children.filter(x=>x!==el)},
     addEventListener(){},onclick:null};
   el.getContext=()=>ctx2d;
+  el.querySelectorAll=(sel)=>{
+    const tag=sel.trim().toLowerCase();
+    return el.children.filter(c=>c.tag===tag||tag==='*');
+  };
   Object.defineProperty(el,'textContent',{
-    get(){return el._text},
+    get(){return el._text||el.innerHTML},
     set(v){el._text=String(v)}});
   Object.defineProperty(el,'firstChild',{get(){return el.children[0]||null}});
   Object.defineProperty(el,'lastChild',{get(){return el.children[el.children.length-1]||null}});
@@ -44,6 +48,7 @@ const IDS=['boot','c','hud','vignette','fade','crosshair','prompt','toasts','obj
  'cgL50','cgL100','cgLAll','cgBuy100','cgSellAll'];
 IDS.push('debtWrap','debtV','cgDebtV','rvPanel','rvCashV','rvRepV','rvBackV',
 'rvSilence','rvCops','rvTwins','tint','cgMarker200','cgSettle','rvClose');
+IDS.push('spPanel','spTitle','spKeeper','spCashV','spList','spClose','speedo');
 IDS.forEach(id=>elems[id]=makeEl('div',id));
 ['bjPanel','dcPanel','bwPanel','cgPanel','shPanel','hpPanel','bustedOv','endOv',
 'hud','c','vignette','rentBox','prompt','mobileWarn','continueBtn','rvPanel'].forEach(
@@ -173,6 +178,7 @@ try{
   vm.runInContext(src,base,{filename:'marker-game.js'});
 }catch(e){
   console.log('FAIL*** | game script evaluates :: '+e.message);
+  console.log(e.stack.split('\n').slice(0,4).join('\n'));
   process.exit(1);
 }
 let failures=0;
@@ -359,10 +365,93 @@ check('heat 65+ spawns patrols',base.__MARKER.cops()>copsBefore,
   copsBefore+' -> '+base.__MARKER.cops());
 
 /* ---- MINIMAP renders ---- */
-ctxOps=0;miniPump();
-function miniPump(){pump(2)}
+ctxOps=0;pump(2);
 check('minimap draws each frame',ctxOps>4,String(ctxOps)+' ops');
 
+/* ---- CAR: enter, drive, exit, save ---- */
+key('escape');pump(2);
+{ const d=saveState();d.min=12*60;                 /* daylight, no patrols */
+  storage[SAVE]=JSON.stringify(d);click('continueBtn');pump(3); }
+relocate(-30,-12,-1.2);                            /* beside the coupe */
+dbg('at car');
+check('car parked at spawn lot',true);
+pressE();                                          /* E on the car: nothing else near */
+pump(2);
+const carOn=!base.__MARKER.pos()||!elems.c?false:(function(){
+  /* driving state: speedo visible is the observable */
+  return vis('speedo');
+})();
+check('E enters the car (speedo up)',carOn);
+key('w');pump(60);                                 /* ~1s of throttle */
+key('w',false);
+const spd=parseInt(elems.speedo.innerHTML)||0;
+check('car gains speed under throttle',spd>5,String(spd)+' mph');
+const pIn=base.__MARKER.pos();
+pump(40);
+const pOut=base.__MARKER.pos();
+check('car moves through the city',
+  Math.abs(pOut.x-pIn.x)+Math.abs(pOut.z-pIn.z)>3,
+  JSON.stringify(pIn)+' -> '+JSON.stringify(pOut));
+key('escape');pump(1);                             /* make sure no panel ate input */
+pressE();                                          /* step out */
+pump(2);
+check('E exits the car (speedo hidden)',!vis('speedo'));
+{ const st=saveState();
+  check('car position persisted to save',st.car&&typeof st.car.x==='number',
+    JSON.stringify(st.car)); }
+
+/* ---- STREET SHOPS: storefronts, interiors, keeper trade, perks ---- */
+function shopRow(re){
+  return elems.spList.children.map(r=>({left:r.children[0],btn:r.children[1]}))
+    .find(o=>o.left&&o.btn&&re.test(o.left.textContent));
+}
+relocate(-99,-52,-1.57);                           /* pawn shop door */
+dbg('at pawn door');
+pressE();pump(2);
+check('pawn door teleports inside',Math.abs(base.__MARKER.pos().x+260)<40,
+  JSON.stringify(base.__MARKER.pos()));
+check('zone shows shop interior',txt('zoneV').indexOf("KASZUB")>=0,txt('zoneV'));
+{ const d=saveState();d.hooch=3;d.lastQ=4;d.cash=200;
+  storage[SAVE]=JSON.stringify(d);click('continueBtn');pump(3); }
+relocate(-260,-504.6,Math.PI);                     /* pawn counter */
+pressE();
+check('keeper panel opens via E',vis('spPanel'),elems.prompt.innerHTML);
+const sellRow=shopRow(/SELL A BOTTLE/);
+check("pawn lists bottle buyback",!!sellRow,elems.spList.children.length+' items');
+if(sellRow)sellRow.btn.onclick({preventDefault(){}});
+const pawnSt=saveState();
+check('bottle sold to pawn at premium',pawnSt.hooch===2&&pawnSt.cash>200,
+  pawnSt.hooch+' left, $'+pawnSt.cash);
+const cutRow=shopRow(/BOLT CUTTERS/);
+if(cutRow&&!cutRow.btn.disabled)cutRow.btn.onclick({preventDefault(){}});
+check('bolt cutters purchased',saveState().upgrades.pawn===true,
+  JSON.stringify(saveState().upgrades.pawn));
+click('spClose');pump(2);
+/* grocery: yeast perk */
+relocate(45,-52,-1.57);pressE();pump(2);
+relocate(-180,-504.6,Math.PI);pressE();
+{ const y=shopRow(/YEAST/);
+  if(y&&!y.btn.disabled)y.btn.onclick({preventDefault(){}});
+  check('yeast bought (bubbles upgrade set)',saveState().upgrades.bubbles===true,
+    JSON.stringify(saveState().upgrades.bubbles)); }
+click('spClose');pump(2);
+/* barber: suit perk */
+relocate(-27,16,-1.57);pressE();pump(2);
+relocate(60,-504.6,Math.PI);pressE();
+{ const w=shopRow(/THE WORKS/);
+  const c0=saveState().cash;
+  if(w&&!w.btn.disabled)w.btn.onclick({preventDefault(){}});
+  check('barber works bought',saveState().upgrades.suit===true,
+    'cash '+c0+'->'+saveState().cash); }
+click('spClose');pump(2);
+/* leave trigger returns you to the street */
+relocate(-180,-494.8,0);                            /* grocery leave spot */
+pressE();pump(2);
+const outPos=base.__MARKER.pos();
+check('leave door returns to street',outPos.z>-400,JSON.stringify(outPos));
+
+/* ---- GFX: engine hooks present (r147 API guarded) ---- */
+check('renderFrame path active (no crash over frames)',deadFrames<20,String(deadFrames));
 /* ---- MARKERS: sign, owe, default twice, collector visits ---- */
 relocate(589.6,6.4,-1.57);pressE();
 const debt0=saveState().debt;

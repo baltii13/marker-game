@@ -1,325 +1,3 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MARKER — playable slice</title>
-<style>
-  :root{
-    --amber:#ffb347; --red:#ff5a5a; --green:#57d98a;
-    --ink:#e8e2d6; --mut:#9a938a; --panelbg:rgba(12,11,14,.94); --line:rgba(255,179,71,.35);
-  }
-  *{box-sizing:border-box;margin:0;padding:0}
-  html,body{width:100%;height:100%;overflow:hidden;background:#07070a;color:var(--ink);
-    font-family:"Courier New",ui-monospace,Consolas,monospace;-webkit-font-smoothing:antialiased}
-  #c{position:fixed;inset:0;width:100%;height:100%;display:block;cursor:crosshair}
-  .hidden{display:none!important}
-
-  /* ---------- boot ---------- */
-  #boot{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;
-    background:radial-gradient(ellipse at 50% 30%,#191420 0%,#07070a 70%)}
-  #bootCard{text-align:center;max-width:560px;padding:32px;border:1px solid var(--line);background:rgba(10,9,12,.7)}
-  #bootTitle{font-size:56px;letter-spacing:.35em;color:var(--amber);text-shadow:0 0 24px rgba(255,179,71,.45)}
-  #bootTag{margin-top:6px;color:var(--mut);letter-spacing:.12em;font-size:13px}
-  #bootHelp{margin:22px 0;font-size:12px;line-height:1.9;color:var(--mut);border-top:1px solid rgba(255,255,255,.08);
-    border-bottom:1px solid rgba(255,255,255,.08);padding:14px 0;text-align:left}
-  #bootHelp b{color:var(--ink)}
-  .bigbtn{display:inline-block;margin:6px 6px 0;padding:13px 34px;font-family:inherit;font-size:16px;letter-spacing:.25em;
-    color:#0d0b08;background:var(--amber);border:none;cursor:pointer}
-  .bigbtn:hover{background:#ffc76e}
-  .bigbtn.ghost{background:transparent;color:var(--amber);border:1px solid var(--line)}
-  .bigbtn.ghost:hover{background:rgba(255,179,71,.12)}
-  #bootErr{color:var(--red);margin-top:14px;font-size:12px}
-
-  /* ---------- HUD ---------- */
-  #hud{position:fixed;inset:0;z-index:10;pointer-events:none}
-  #top{position:absolute;top:0;left:0;right:0;display:flex;gap:14px;align-items:center;flex-wrap:wrap;
-    padding:10px 14px;background:linear-gradient(rgba(7,7,10,.88),rgba(7,7,10,0));font-size:13px}
-  .stat{white-space:nowrap}
-  .stat .lab{color:var(--mut);letter-spacing:.1em;font-size:10px;display:block}
-  .stat .val{font-size:16px;font-weight:bold}
-  #cashV{color:var(--green)} #chipsV{color:#7ecbff} #heatWrap{min-width:90px}
-  #heatBar{width:90px;height:6px;background:rgba(255,255,255,.12);margin-top:3px}
-  #heatFill{height:100%;width:0%;background:var(--green);transition:width .3s,background .3s}
-  #clockV{color:var(--amber)} #zoneV{color:var(--mut);letter-spacing:.15em;font-size:11px}
-  #objV{position:absolute;top:74px;left:50%;transform:translateX(-50%);font-size:12px;color:#cdb891;
-    background:rgba(10,9,12,.55);padding:4px 14px;border:1px solid rgba(255,179,71,.18);letter-spacing:.06em;white-space:nowrap}
-  #rentBox{position:absolute;top:74px;right:14px;background:rgba(60,14,14,.85);border:1px solid var(--red);
-    padding:8px 12px;font-size:12px;pointer-events:auto}
-  #rentBox.ok{background:rgba(14,46,26,.85);border-color:var(--green)}
-  #rentAmtV{color:#fff;font-weight:bold}
-  #payRentBtn{margin-left:10px;padding:4px 10px;background:var(--red);color:#fff;border:none;font-family:inherit;
-    cursor:pointer;letter-spacing:.1em;font-size:11px}
-  #payRentBtn:disabled{opacity:.4;cursor:not-allowed}
-  #hoochV{color:#c9a2ff}
-  #crosshair{position:absolute;left:50%;top:50%;width:6px;height:6px;margin:-3px;border-radius:50%;
-    background:rgba(255,255,255,.55);box-shadow:0 0 6px rgba(255,255,255,.4)}
-  #prompt{position:absolute;left:50%;bottom:16%;transform:translateX(-50%);font-size:15px;letter-spacing:.04em;
-    background:rgba(10,9,12,.82);border:1px solid var(--line);padding:9px 18px;color:var(--ink)}
-  #prompt b{color:var(--amber)}
-  #toasts{position:absolute;right:14px;bottom:90px;display:flex;flex-direction:column;gap:6px;align-items:flex-end}
-  #mini{position:absolute;right:10px;bottom:10px;border:1px solid var(--line);
-    background:rgba(8,8,12,.75)}
-  #speedo{position:absolute;left:50%;transform:translateX(-50%);bottom:7%;font-size:34px;font-weight:bold;
-    color:var(--ink);text-shadow:0 0 14px rgba(255,179,71,.55);letter-spacing:.05em}
-  #speedo span{font-size:13px;color:var(--mut);font-weight:normal}
-  #debtV{color:#ff7b7b}
-  #tint{position:fixed;inset:0;z-index:6;pointer-events:none;opacity:0;
-    transition:opacity .4s;box-shadow:inset 0 0 170px rgba(255,45,45,.6)}
-  .toast{background:rgba(10,9,12,.92);border-left:3px solid var(--amber);padding:8px 14px;font-size:13px;
-    max-width:340px;animation:tIn .25s ease-out}
-  .toast.bad{border-left-color:var(--red)} .toast.good{border-left-color:var(--green)} .toast.info{border-left-color:#7ecbff}
-  @keyframes tIn{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:none}}
-  #fade{position:fixed;inset:0;z-index:40;background:#000;opacity:0;pointer-events:none;transition:opacity .45s}
-  #vignette{position:fixed;inset:0;z-index:5;pointer-events:none;
-    box-shadow:inset 0 0 180px rgba(0,0,0,.75)}
-
-  /* ---------- overlays ---------- */
-  .bigov{position:fixed;inset:0;z-index:45;display:flex;align-items:center;justify-content:center;background:rgba(4,3,6,.82)}
-  .bigov .card{text-align:center;border:1px solid var(--line);background:var(--panelbg);padding:40px 56px}
-  .bigov h2{font-size:42px;letter-spacing:.3em;margin-bottom:10px}
-  #bustedTxt{color:var(--red)} #endTitle.win{color:var(--green)} #endTitle.lose{color:var(--red)}
-  .bigov p{color:var(--mut);font-size:13px;line-height:1.8;margin-bottom:18px}
-
-  /* ---------- panels ---------- */
-  .panel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:30;width:min(620px,94vw);
-    background:var(--panelbg);border:1px solid var(--line);padding:20px 24px;pointer-events:auto}
-  .panel h3{color:var(--amber);letter-spacing:.25em;font-size:15px;margin-bottom:4px}
-  .panel .sub{color:var(--mut);font-size:11px;margin-bottom:14px}
-  .xbtn{position:absolute;top:10px;right:12px;background:none;border:none;color:var(--mut);font-size:18px;
-    cursor:pointer;font-family:inherit}
-  .xbtn:hover{color:var(--ink)}
-  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}
-  .btn{padding:8px 14px;background:#1d1a16;color:var(--ink);border:1px solid rgba(255,255,255,.16);
-    font-family:inherit;font-size:13px;cursor:pointer;letter-spacing:.05em}
-  .btn:hover:not(:disabled){border-color:var(--amber);color:var(--amber)}
-  .btn:disabled{opacity:.35;cursor:not-allowed}
-  .btn.primary{background:var(--amber);color:#0d0b08;border-color:var(--amber);font-weight:bold}
-  .btn.primary:hover:not(:disabled){background:#ffc76e;color:#0d0b08}
-  .kv{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:13px;padding:3px 0;color:var(--mut)}
-  .kv b{color:var(--ink)}
-
-  /* blackjack */
-  .handRow{min-height:74px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:6px 0}
-  .cardpc{width:48px;height:66px;background:#efe9dc;color:#111;border-radius:5px;display:inline-flex;
-    flex-direction:column;justify-content:center;align-items:center;font-size:17px;font-weight:bold;
-    box-shadow:0 2px 6px rgba(0,0,0,.5);line-height:1.05}
-  .cardpc.red{color:#c22} .cardpc.back{background:repeating-linear-gradient(45deg,#7a1f2b,#7a1f2b 5px,#5d1620 5px,#5d1620 10px)}
-  .cardpc .suit{font-size:20px}
-  .totBadge{font-size:12px;color:var(--mut);margin-left:8px}
-  #bjMsg{min-height:20px;font-size:14px;color:var(--amber);margin:8px 0}
-  .feltline{border-top:1px dashed rgba(255,255,255,.14);margin:6px 0}
-
-  /* dice */
-  #dcLog{font-size:12px;color:var(--mut);max-height:96px;overflow:auto;line-height:1.7}
-  #dcLog .win{color:var(--green)} #dcLog .loss{color:var(--red)}
-  #dcMsg{min-height:22px;font-size:15px;color:var(--amber);margin:6px 0}
-
-  /* shop */
-  .shopitem{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.07);font-size:13px}
-  .shopitem .nm{color:var(--ink)} .shopitem .ds{color:var(--mut);font-size:11px;margin-top:2px}
-  .own{color:var(--green);font-size:11px;letter-spacing:.1em}
-
-  #mobileWarn{position:fixed;inset:auto 0 0 0;z-index:60;background:rgba(60,14,14,.92);color:#fff;
-    padding:8px;text-align:center;font-size:12px}
-  @media (max-width:720px){ #bootTitle{font-size:34px} .stat .val{font-size:13px} }
-</style>
-</head>
-<body>
-
-<div id="boot">
-  <div id="bootCard">
-    <div id="bootTitle">MARKER</div>
-    <div id="bootTag">BOOTLEG BY NIGHT · BREAK THE BANK BY MORNING · PLAYABLE SLICE v3</div>
-    <div id="bootHelp">
-      <b>WASD</b> move · <b>SHIFT</b> sprint · <b>MOUSE</b> (click page to lock) or <b>←→</b> look · <b>E</b> interact · <b>ESC</b> release/close<br>
-      Brew hooch at the alley still · sell it on the street · launder dirty cash at the Lucky Nine's cage ·
-      gamble your crew's money · <b>make rent every 3 days or lose everything.</b><br>
-      Goal: <b>$20,000</b>. Yellow cones are cop sightlines — red means RUN.
-      Bottom-right minimap tracks you, patrols, and hot spots.
-      Flush-broke? Sign <b>markers</b> at the cage — default twice and a collector visits. <b>M</b> mutes.
-    </div>
-    <button class="bigbtn" id="beginBtn" type="button">NEW GAME</button>
-    <button class="bigbtn ghost hidden" id="continueBtn" type="button">CONTINUE</button>
-    <div id="bootErr"></div>
-  </div>
-</div>
-
-<canvas id="c" class="hidden"></canvas>
-
-<div id="hud" class="hidden">
-  <div id="top">
-    <span class="stat"><span class="lab">CASH</span><span class="val" id="cashV">$0</span></span>
-    <span class="stat"><span class="lab">CHIPS</span><span class="val" id="chipsV">0</span></span>
-    <span class="stat" id="debtWrap" style="display:none"><span class="lab">DEBT</span><span class="val" id="debtV">$0</span></span>
-    <span class="stat"><span class="lab">HOOCH</span><span class="val" id="hoochV">0🥃</span></span>
-    <span class="stat"><span class="lab">DAY</span><span class="val" id="dayV">1</span></span>
-    <span class="stat"><span class="lab">TIME</span><span class="val" id="clockV">08:00</span></span>
-    <span class="stat" id="heatWrap"><span class="lab">HEAT</span><span class="val" id="heatV">0%</span><div id="heatBar"><div id="heatFill"></div></div></span>
-    <span class="stat"><span class="lab">REP</span><span class="val" id="repV">0</span></span>
-    <span class="stat"><span class="lab">ZONE</span><span class="val" id="zoneV">OLD TOWN</span></span>
-  </div>
-  <div id="objV">…</div>
-  <div id="speedo" class="hidden">0 <span>MPH</span></div>
-  <div id="rentBox" class="hidden"><span id="rentLabel">RENT DUE</span> <span id="rentAmtV">$0</span><button id="payRentBtn" type="button">PAY</button></div>
-  <div id="crosshair"></div>
-  <div id="prompt" class="hidden"></div>
-  <canvas id="mini" width="150" height="150" class="hidden"></canvas>
-  <div id="toasts"></div>
-</div>
-
-<div id="vignette" class="hidden"></div>
-<div id="tint"></div>
-
-<!-- BLACKJACK -->
-<div id="bjPanel" class="panel hidden">
-  <button class="xbtn" id="bjClose" type="button">✕</button>
-  <h3>BLACKJACK — LUCKY NINE FRONT ROOM</h3>
-  <div class="sub">Blackjack pays 3:2 · Dealer stands on 17 · Chips are spotless money</div>
-  <div class="kv"><span>Your chips: <b id="bjChipsV">0</b></span><span>Bet: <b id="bjBetV">0</b></span></div>
-  <div class="row">
-    <button class="btn" id="bjBet10" type="button">+10</button>
-    <button class="btn" id="bjBet50" type="button">+50</button>
-    <button class="btn" id="bjBet100" type="button">+100</button>
-    <button class="btn" id="bjBetClr" type="button">CLEAR</button>
-  </div>
-  <div class="feltline"></div>
-  <div style="font-size:11px;color:var(--mut);letter-spacing:.15em">DEALER <span class="totBadge" id="bjDTot"></span></div>
-  <div class="handRow" id="bjDHand"></div>
-  <div style="font-size:11px;color:var(--mut);letter-spacing:.15em">YOU <span class="totBadge" id="bjPTot"></span></div>
-  <div class="handRow" id="bjPHand"></div>
-  <div id="bjMsg">Place your bet.</div>
-  <div class="row">
-    <button class="btn primary" id="bjDeal" type="button">DEAL</button>
-    <button class="btn" id="bjHit" type="button" disabled>HIT</button>
-    <button class="btn" id="bjStand" type="button" disabled>STAND</button>
-    <button class="btn" id="bjDouble" type="button" disabled>DOUBLE</button>
-  </div>
-</div>
-
-<!-- DICE -->
-<div id="dcPanel" class="panel hidden">
-  <button class="xbtn" id="dcClose" type="button">✕</button>
-  <h3>BACK-ROOM DICE</h3>
-  <div class="sub">Two dice · UNDER (2–6) pays 2× · EXACT SEVEN pays 5× · OVER (8–12) pays 2×</div>
-  <div class="kv"><span>Your chips: <b id="dcChipsV">0</b></span><span>Bet: <b id="dcBetV">0</b></span></div>
-  <div class="row">
-    <button class="btn" id="dcB10" type="button">+10</button>
-    <button class="btn" id="dcB50" type="button">+50</button>
-    <button class="btn" id="dcB100" type="button">+100</button>
-  </div>
-  <div class="row">
-    <button class="btn primary" id="dcU" type="button" disabled>UNDER 7</button>
-    <button class="btn primary" id="dcS" type="button" disabled>EXACT 7</button>
-    <button class="btn primary" id="dcO" type="button" disabled>OVER 7</button>
-  </div>
-  <div id="dcMsg">Place a bet, pick a side.</div>
-  <div id="dcLog"></div>
-</div>
-
-<!-- BREW -->
-<div id="bwPanel" class="panel hidden">
-  <button class="xbtn" id="bwClose" type="button">✕</button>
-  <h3>COPPER STILL — ALLEY SHACK</h3>
-  <div class="sub">Sugar in, regret out. Higher quality sells for more; low stuff makes customers talk.</div>
-  <div class="kv"><span>Batch: <b id="bwMash">idle</b></span><span>Hooch carried (<b id="bwHooch">0</b>/6)</span><span>Last quality: <b id="bwQ">—</b></span></div>
-  <div class="row">
-    <button class="btn primary" id="bwStart" type="button">START BATCH — $30</button>
-    <button class="btn" id="bwCollect" type="button" disabled>COLLECT BOTTLE</button>
-  </div>
-  <div id="bwInfo" class="sub" style="margin-top:10px">The still is cold. A batch takes about 45 seconds.</div>
-</div>
-
-<!-- CAGE -->
-<div id="cgPanel" class="panel hidden">
-  <button class="xbtn" id="cgClose" type="button">✕</button>
-  <h3>LAUNDERING CAGE</h3>
-  <div class="sub">Dirty cash goes in the drop, "gaming winnings" come out. 25% vig. Casino volume caps how much you can plausibly wash per day.</div>
-  <div class="kv"><span>Cash on hand: <b id="cgCashV">$0</b></span><span>Chips: <b id="cgChipV">0</b></span><span>Cage volume today: <b id="cgCapV">0 / 300</b></span></div>
-  <div class="row">
-    <button class="btn primary" id="cgL50" type="button">WASH $50</button>
-    <button class="btn primary" id="cgL100" type="button">WASH $100</button>
-    <button class="btn primary" id="cgLAll" type="button">WASH ALL</button>
-  </div>
-  <div class="feltline"></div>
-  <div class="sub" style="margin-bottom:4px">Chip exchange — 1 : 1 (counts toward today's volume). Winnings cash out free.</div>
-  <div class="row">
-    <button class="btn" id="cgBuy100" type="button">BUY $100 IN CHIPS</button>
-    <button class="btn" id="cgSellAll" type="button">CASH OUT CHIPS</button>
-  </div>
-  <div class="feltline"></div>
-  <div class="sub">MARKERS — the house fronts you chips, you sign an IOU. 30% vig, 15% nightly interest. Default twice and someone visits.</div>
-  <div class="kv"><span>Outstanding markers: <b id="cgDebtV">$0</b></span></div>
-  <div class="row">
-    <button class="btn danger" id="cgMarker200" type="button">SIGN $200 MARKER (+$200 chips, owe $260)</button>
-    <button class="btn primary" id="cgSettle" type="button">SETTLE MARKERS</button>
-  </div>
-</div>
-
-<!-- RIVAL -->
-<div id="rvPanel" class="panel hidden">
-  <button class="xbtn" id="rvClose" type="button">✕</button>
-  <h3>VINNIE'S CORNER</h3>
-  <div class="sub">He sells on YOUR plaza. Every bottle you move while he's pitching goes for 25% less.</div>
-  <div class="kv"><span>Cash: <b id="rvCashV">$0</b></span><span>Rep: <b id="rvRepV">0</b></span><span>Back on the corner: <b id="rvBackV">tonight</b></span></div>
-  <div class="row"><button class="btn primary" id="rvSilence" type="button">BUY HIS SILENCE — $150 (gone 1 day)</button></div>
-  <div class="row"><button class="btn primary" id="rvCops" type="button">TIP THE FEDS — $100 + heat (gone 3 days)</button></div>
-  <div class="row"><button class="btn primary" id="rvTwins" type="button">SEND THE TWINS — free, rep 5+, big heat (gone 5 days)</button></div>
-</div>
-
-<!-- SHOP -->
-<div id="shPanel" class="panel hidden">
-  <button class="xbtn" id="shClose" type="button">✕</button>
-  <h3>SALTY'S — PIER GOODS</h3>
-  <div class="sub">"Everything here fell off a truck, officer."</div>
-  <div class="kv"><span>Cash: <b id="shCashV">$0</b></span></div>
-  <div id="shList"></div>
-</div>
-
-<!-- STREET SHOP (enterable) -->
-<div id="spPanel" class="panel hidden">
-  <button class="xbtn" id="spClose" type="button">✕</button>
-  <h3 id="spTitle">SHOP</h3>
-  <div class="sub" id="spKeeper">…</div>
-  <div class="kv"><span>Cash: <b id="spCashV">$0</b></span></div>
-  <div id="spList"></div>
-</div>
-
-<!-- HELP -->
-<div id="hpPanel" class="panel hidden">
-  <button class="xbtn" id="hpClose" type="button">✕</button>
-  <h3>HOW TO RUN THE RACKET</h3>
-  <div style="font-size:13px;line-height:2;color:var(--mut)">
-    <b style="color:var(--ink)">1.</b> Alley still (glowing shack, east side): START BATCH → COLLECT.<br>
-    <b style="color:var(--ink)">2.</b> Walk up to pedestrians, press E to sell hooch. Quality &amp; rep raise the price.<br>
-    <b style="color:var(--ink)">3.</b> Don't deal near cops — yellow cones are their sight. Red means RUN.<br>
-    <b style="color:var(--ink)">4.</b> Lucky Nine club (west block): stock the bar, wash cash at the cage, play cards &amp; dice.<br>
-    <b style="color:var(--ink)">5.</b> Salty's on the pier sells gear: faster still, quiet shoes, loaded dice, marked deck, bigger laundry, city ledger.<br>
-    <b style="color:var(--ink)">6.</b> Five shops take you INSIDE now (walk into a door): PAWN buys bottles at 115%, GROCERY sells yeast for +1 brew quality, HARDWARE rents bolt cutters, LAUNDRY launders small bills, BARBER hides your face.<br>
-    <b style="color:var(--ink)">7.</b> Your oxblood coupe is parked by the spawn — press E to drive, E to step out. Rent every 3 days, rising fast. Reach <b style="color:var(--ink)">$20,000</b> to own the city.<br>
-    <b style="color:var(--ink)">8.</b> Broke? Sign MARKERS at the cage. Default twice and a collector hunts you down.<br>
-    <b style="color:var(--ink)">9.</b> Vinnie pitches on the plaza evenings — buy him off, tip the feds, or send the twins.<br>
-    <b style="color:var(--ink)">M</b> mutes sound. Stock the bar before 20:00 — the night crowd plays hard.
-  </div>
-</div>
-
-<div id="bustedOv" class="bigov hidden"><div class="card"><h2 id="bustedTxt">BUSTED</h2><p id="bustedSub"></p></div></div>
-<div id="endOv" class="bigov hidden"><div class="card"><h2 id="endTitle">THE END</h2><p id="endSub"></p><button class="bigbtn" id="endBtn" type="button">RUN IT BACK</button></div></div>
-<div id="fade"></div>
-<div id="mobileWarn" class="hidden">⚠ MARKER is a keyboard + mouse experience — play on desktop for the good stuff.</div>
-
-<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
-<script>window.THREE||document.write('<script src="https://unpkg.com/three@0.147.0/build/three.min.js"><\\/script>');</script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/shaders/CopyShader.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
-<script>window.THREE&&window.THREE.CopyShader||document.write('<script src="https://unpkg.com/three@0.147.0/examples/js/shaders/CopyShader.js"><\\/script><script src="https://unpkg.com/three@0.147.0/examples/js/shaders/LuminosityHighPassShader.js"><\\/script>');</script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/EffectComposer.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/RenderPass.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/MaskPass.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/ShaderPass.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
-<script>window.THREE&&window.THREE.EffectComposer||document.write('<script src="https://unpkg.com/three@0.147.0/examples/js/postprocessing/EffectComposer.js"><\\/script><script src="https://unpkg.com/three@0.147.0/examples/js/postprocessing/RenderPass.js"><\\/script><script src="https://unpkg.com/three@0.147.0/examples/js/postprocessing/MaskPass.js"><\\/script><script src="https://unpkg.com/three@0.147.0/examples/js/postprocessing/ShaderPass.js"><\\/script><script src="https://unpkg.com/three@0.147.0/examples/js/postprocessing/UnrealBloomPass.js"><\\/script>');</script>
-<script>
 (function(){
 'use strict';
 /* ============================================================ utils */
@@ -357,7 +35,7 @@ function save(){
       washed:S.washed,cap:S.cap,diceLeft:S.diceLeft,soldOnce:S.soldOnce,brewedOnce:S.brewedOnce,playedBJ:S.playedBJ,
       debt:S.debt,defaults:S.defaults,collector:S.collector,rival:S.rival,
       pos:p,yaw:round2(yaw),
-      car:(car&&!car.parked)?null:{x:round2(car.mesh.position.x),z:round2(car.mesh.position.z),ry:round2(car.mesh.rotation.y)}}));
+      car:(car&&!car.parked)?null:{x:round2(car.mesh.position.x),z:round2(car.mesh.position.z),ry:round2(car.mesh.rotation.y)}));
   }catch(e){}
 }
 function loadSave(){
@@ -648,6 +326,31 @@ function makeShop(x,z,w,d,h){
   chim.position.set(x+w/4,h+roofH*0.5,z-d/4);chim.castShadow=true;scene.add(chim);
   addCol(x,z,w+0.6,d+0.6);
 }
+var SKIP=[[PLAZA.x,PLAZA.z],[PARK.x,PARK.z],[CLUB.x,CLUB.z],[POLICE.x,POLICE.z],[ALLEY.x,ALLEY.z],[-26,-12]];
+var clubDoorPos={x:CLUB.x+13.2,z:CLUB.frontZ};
+var intDoorPos={x:INT.intDoorX,z:INT.z+11};
+function nearSkip(cx,cz){
+  for(var k=0;k<SKIP.length;k++){
+    var dx=cx-SKIP[k][0],dz=cz-SKIP[k][1];
+    if(dx*dx+dz*dz<27*27)return true;
+  }
+  return false;
+}
+for(var bi=0;bi<L.length-1;bi++)for(var bj=0;bj<L.length-1;bj++){
+  var cx=L[bi]+18, cz=L[bj]-18;
+  if(cx<-160||cx>160||cz<-150||cz>80)continue;
+  if(nearSkip(cx,cz))continue;
+  if(shopAt(cx,cz))continue;                   /* storefronts claim their own lots */
+  var w=rnd(16,24),d=rnd(16,24);
+  var distC=Math.sqrt(cx*cx+(cz+40)*(cz+40));
+  if(distC<95&&Math.random()<0.55){
+    /* downtown core: low colorful shops, Schedule-1 main-street feel */
+    makeShop(cx,cz,w,d,rnd(5,9));
+  }else{
+    var h=(distC<110)?rnd(10,22):rnd(8,18);
+    makeBuilding(cx,cz,w,d,h);
+  }
+}
 /* ---------- ENTERABLE SHOPS: five doors that open into real interiors ---------- */
 var SHOPS=[
   {id:'pawn',nm:"KASZUB'S PAWN",x:-99,z:-63,w:20,d:16,hello:'Cash on the glass, no paperwork.',
@@ -710,7 +413,6 @@ function enterShop(sh){
   yaw=Math.PI;
   sfx.click();
   toast(sh.nm+' — "'+sh.hello+'"','info');
-  hudSync();
 }
 function exitShop(sh){
   var r=shopReturn||{x:sh.x,z:sh.z+sh.d/2+2.5};
@@ -837,31 +539,6 @@ function spAct(itm){
   hudSync();save();spRender();
 }
 
-var SKIP=[[PLAZA.x,PLAZA.z],[PARK.x,PARK.z],[CLUB.x,CLUB.z],[POLICE.x,POLICE.z],[ALLEY.x,ALLEY.z],[-26,-12]];
-var clubDoorPos={x:CLUB.x+13.2,z:CLUB.frontZ};
-var intDoorPos={x:INT.intDoorX,z:INT.z+11};
-function nearSkip(cx,cz){
-  for(var k=0;k<SKIP.length;k++){
-    var dx=cx-SKIP[k][0],dz=cz-SKIP[k][1];
-    if(dx*dx+dz*dz<27*27)return true;
-  }
-  return false;
-}
-for(var bi=0;bi<L.length-1;bi++)for(var bj=0;bj<L.length-1;bj++){
-  var cx=L[bi]+18, cz=L[bj]-18;
-  if(cx<-160||cx>160||cz<-150||cz>80)continue;
-  if(nearSkip(cx,cz))continue;
-  if(shopAt(cx,cz))continue;                   /* storefronts claim their own lots */
-  var w=rnd(16,24),d=rnd(16,24);
-  var distC=Math.sqrt(cx*cx+(cz+40)*(cz+40));
-  if(distC<95&&Math.random()<0.55){
-    /* downtown core: low colorful shops, Schedule-1 main-street feel */
-    makeShop(cx,cz,w,d,rnd(5,9));
-  }else{
-    var h=(distC<110)?rnd(10,22):rnd(8,18);
-    makeBuilding(cx,cz,w,d,h);
-  }
-}
 /* ---------- plaza ---------- */
 function buildPlaza(cx,cz){
   var pav=new THREE.Mesh(new THREE.PlaneGeometry(30,30),new THREE.MeshLambertMaterial({color:0x1d1e26}));
@@ -1664,7 +1341,6 @@ function openPanel(id){
   if(id==='cgPanel')cgRender();
   if(id==='shPanel')shRender();
   if(id==='rvPanel')rvRender();
-  if(id==='spPanel')spRender();
 }
 function closePanels(silent){
   PANELS.forEach(function(p){$(p).classList.add('hidden')});
@@ -2667,6 +2343,3 @@ window.__MARKER={S:function(){return S},
   pedFreeze:function(){var p=nearestPed(9999);if(p){p.pause=1e9;p.mesh.position.set(base.__x||20.9,0,base.__z||-40)}return p?{x:p.mesh.position.x,z:p.mesh.position.z}:null}};
 })();
 
-</script>
-</body>
-</html>
