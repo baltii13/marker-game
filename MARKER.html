@@ -319,7 +319,7 @@ var S={
   debt:0, defaults:0, collector:false,
   rival:{active:false,goneUntilDay:0},
   soldOnce:false, brewedOnce:false, playedBJ:false,
-  pos:[-18,-2], yaw:-2.2,
+  pos:[-26,-12], yaw:-2.4,
   rentDueNext:false,
   ended:null
 };
@@ -511,7 +511,7 @@ function addCol(x,z,w,d){colliders.push({x0:x-w/2,x1:x+w/2,z0:z-d/2,z1:z+d/2})}
 var world={},lampLights=[],lampHeads=[],neonMats=[];
 
 /* ---------- ground / roads / water */
-var ground=new THREE.Mesh(new THREE.PlaneGeometry(340,340),
+var ground=new THREE.Mesh(new THREE.PlaneGeometry(480,480),
   new THREE.MeshLambertMaterial({color:0x15161c}));
 ground.rotation.x=-Math.PI/2;ground.position.z=-20;scene.add(ground);
 (function(){
@@ -523,47 +523,30 @@ ground.rotation.x=-Math.PI/2;ground.position.z=-20;scene.add(ground);
 })();
 (function roadMarks(){
   var mat=new THREE.MeshBasicMaterial({color:0x8a8578});
-  for(var x=-126;x<=126;x+=8){
+  for(var x=-160;x<=160;x+=8){
     var m=new THREE.Mesh(new THREE.BoxGeometry(3,0.02,0.5),mat);
-    m.position.set(x,0.02,-18);scene.add(m);
+    m.position.set(x,0.02,-54);scene.add(m);
   }
-  for(var z=-108;z<=72;z+=8){
+  for(var z=-144;z<=144;z+=8){
     var m2=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.02,3),mat);
-    m2.position.set(-18,0.02,z);scene.add(m2);
+    m2.position.set(0,0.02,z);scene.add(m2);
   }
 })();
 
-/* ---------- city blocks */
-var L=[-108,-72,-36,0,36,72,108];          // street centerlines
-var PLAZA={x:-18,z:-54},PARK={x:-18,z:18},
+/* ---------- city blocks — 8x8 grid, Schedule-1-style small town */
+var L=[-144,-108,-72,-36,0,36,72,108,144];   /* 9 street lines = 8 blocks per axis */
+var PLAZA={x:-18,z:-54},PARK={x:90,z:54},
     CLUB={x:-54,z:-54,frontZ:-43},
-    POLICE={x:54,z:-90},
-    ALLEY={x:18,z:-54},                     // empty lot block hosting the still
-    STILL={x:30,z:-59},
+    POLICE={x:126,z:-126},
+    ALLEY={x:-90,z:-54},
+    STILL={x:-78,z:-59},
     FERRIS={x:0,z:148},
     INT={x:600,z:0,intDoorX:590};
-var clubDoorPos={x:CLUB.x+13.2,z:CLUB.frontZ};
-var intDoorPos={x:INT.intDoorX,z:INT.z+11};
-var SKIP=[[PLAZA.x,PLAZA.z],[PARK.x,PARK.z],[CLUB.x,CLUB.z],[POLICE.x,POLICE.z],[ALLEY.x,ALLEY.z]];
-function nearSkip(cx,cz){
-  for(var k=0;k<SKIP.length;k++){
-    var dx=cx-SKIP[k][0],dz=cz-SKIP[k][1];
-    if(dx*dx+dz*dz<27*27)return true;
-  }
-  return false;
-}
-for(var bi=0;bi<L.length-1;bi++)for(var bj=0;bj<L.length-1;bj++){
-  var cx=L[bi]+18, cz=L[bj]-18;
-  if(cx<-120||cx>120||cz<-130||cz>62)continue;
-  if(nearSkip(cx,cz))continue;
-  var w=rnd(18,26),d=rnd(18,26);
-  var h=(Math.abs(cx)<60&&Math.abs(cz)<60)?rnd(20,40):rnd(8,18);
-  makeBuilding(cx,cz,w,d,h);
-}
 function makeBuilding(x,z,w,d,h){
   var pad=new THREE.Mesh(new THREE.BoxGeometry(w+3,0.24,d+3),
     new THREE.MeshLambertMaterial({color:0x232228}));
   pad.position.set(x,0.12,z);scene.add(pad);
+  pad.receiveShadow=true;
   var tx=winTexs[ri(0,3)].clone();tx.needsUpdate=true;
   tx.repeat.set(Math.max(1,Math.round(((w+d)/2)/5)),Math.max(1,Math.round(h/5)));
   var side=new THREE.MeshLambertMaterial({map:tx,color:0xffffff});
@@ -571,10 +554,6 @@ function makeBuilding(x,z,w,d,h){
   var m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),[side,side,topm,topm,side,side]);
   m.position.set(x,h/2+0.2,z);scene.add(m);
   m.castShadow=true;m.receiveShadow=true;
-  if(h>18&&Math.random()<0.5){
-    var tw=new THREE.Mesh(new THREE.CylinderGeometry(1.4,1.4,3,8),new THREE.MeshLambertMaterial({color:0x3a3230}));
-    tw.position.set(x+w/4,h+1.8,z-d/4);scene.add(tw);
-  }
   if(Math.random()<0.45){                       /* rooftop water tower */
     var tank=new THREE.Mesh(new THREE.CylinderGeometry(1.5,1.7,2.6,9),
       new THREE.MeshLambertMaterial({color:0x4a3524}));
@@ -596,22 +575,69 @@ function makeBuilding(x,z,w,d,h){
       box.castShadow=true;scene.add(box);
     }
   }
-  /* occasional rooftop billboard */
-  if(Math.random()<0.18){
-    var bbTex=textTex(['DRINK NINE','SALTY SAYS HI','GAMBLE? CALL MOM','FRESH HOOCH 24H'][ri(0,3)],
-      '#ffd166','#241a30',30);
-    var bb=new THREE.Mesh(new THREE.PlaneGeometry(10,2.6),
-      new THREE.MeshBasicMaterial({map:bbTex,side:THREE.DoubleSide}));
-    bb.position.set(x,h+3.4,z);
-    bb.rotation.y=rnd(0,Math.PI*2);
-    scene.add(bb);
-    var poleB=new THREE.Mesh(new THREE.BoxGeometry(0.3,3,0.3),
-      new THREE.MeshLambertMaterial({color:0x2a2622}));
-    poleB.position.set(x,h+1.5,z);scene.add(poleB);
-  }
   addCol(x,z,w+0.6,d+0.6);
 }
-
+/* small-town shop: colorful box + pitched roof + awning + hanging sign + chimney */
+function makeShop(x,z,w,d,h){
+  var paint=[0xc96f4a,0x7a9e6a,0xd9b26a,0x6a8aa8,0xb06a8a,0xa8553a][ri(0,5)];
+  var body=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),
+    new THREE.MeshLambertMaterial({color:paint}));
+  body.position.set(x,h/2+0.2,z);body.castShadow=true;body.receiveShadow=true;
+  scene.add(body);
+  /* pitched roof (prism) */
+  var roofH=rnd(1.8,3);
+  var rShape=new THREE.Shape();
+  rShape.moveTo(-w/2-0.8,0);rShape.lineTo(w/2+0.8,0);rShape.lineTo(0,roofH);rShape.closePath();
+  var roof=new THREE.Mesh(new THREE.ExtrudeGeometry(rShape,{depth:d+1.4,bevelEnabled:false}),
+    new THREE.MeshLambertMaterial({color:[0x5a3a2c,0x37424e,0x4a3038][ri(0,2)]}));
+  roof.position.set(x,h+0.2,z-(d+1.4)/2);
+  roof.castShadow=true;scene.add(roof);
+  /* striped awning over the street side */
+  var awn=new THREE.Mesh(new THREE.BoxGeometry(w*0.8,0.12,1.6),
+    new THREE.MeshLambertMaterial({color:0xe8e2d6}));
+  awn.position.set(x,h*0.55,z+(d/2)+0.8);
+  awn.rotation.x=0.35;awn.castShadow=true;scene.add(awn);
+  var stripe=new THREE.Mesh(new THREE.BoxGeometry(w*0.8,0.13,0.4),awn.material.clone());
+  stripe.material.color.setHex(0xb04a3a);
+  stripe.position.set(x,h*0.55+0.02,z+(d/2)+0.85);
+  stripe.rotation.x=0.35;scene.add(stripe);
+  /* hanging sign */
+  var sign=new THREE.Mesh(new THREE.PlaneGeometry(3.4,1),
+    new THREE.MeshBasicMaterial({map:textTex(
+      ['DELI','BARBER','LAUNDRY','RECORDS','BAKERY','PAWN','DINER','HARDWARE'][ri(0,7)],
+      '#ffe9b0','#20242e',30)}));
+  sign.position.set(x,h*0.62,z+(d/2)+1.75);sign.castShadow=false;
+  scene.add(sign);
+  /* chimney */
+  var chim=new THREE.Mesh(new THREE.BoxGeometry(0.8,1.6,0.8),
+    new THREE.MeshLambertMaterial({color:0x6a5040}));
+  chim.position.set(x+w/4,h+roofH*0.5,z-d/4);chim.castShadow=true;scene.add(chim);
+  addCol(x,z,w+0.6,d+0.6);
+}
+var SKIP=[[PLAZA.x,PLAZA.z],[PARK.x,PARK.z],[CLUB.x,CLUB.z],[POLICE.x,POLICE.z],[ALLEY.x,ALLEY.z]];
+var clubDoorPos={x:CLUB.x+13.2,z:CLUB.frontZ};
+var intDoorPos={x:INT.intDoorX,z:INT.z+11};
+function nearSkip(cx,cz){
+  for(var k=0;k<SKIP.length;k++){
+    var dx=cx-SKIP[k][0],dz=cz-SKIP[k][1];
+    if(dx*dx+dz*dz<27*27)return true;
+  }
+  return false;
+}
+for(var bi=0;bi<L.length-1;bi++)for(var bj=0;bj<L.length-1;bj++){
+  var cx=L[bi]+18, cz=L[bj]-18;
+  if(cx<-160||cx>160||cz<-150||cz>80)continue;
+  if(nearSkip(cx,cz))continue;
+  var w=rnd(16,24),d=rnd(16,24);
+  var distC=Math.sqrt(cx*cx+(cz+40)*(cz+40));
+  if(distC<95&&Math.random()<0.55){
+    /* downtown core: low colorful shops, Schedule-1 main-street feel */
+    makeShop(cx,cz,w,d,rnd(5,9));
+  }else{
+    var h=(distC<110)?rnd(10,22):rnd(8,18);
+    makeBuilding(cx,cz,w,d,h);
+  }
+}
 /* ---------- plaza ---------- */
 function buildPlaza(cx,cz){
   var pav=new THREE.Mesh(new THREE.PlaneGeometry(30,30),new THREE.MeshLambertMaterial({color:0x1d1e26}));
@@ -776,10 +802,10 @@ function lamp(x,z,withLight){
   }
 }
 (function lamps(){
-  lamp(-18,-2,true);lamp(-18,-34,true);lamp(-18,10,false);lamp(-40,-18,false);lamp(4,-18,true);
-  lamp(-76,-18,false);lamp(40,-18,false);lamp(30,-40,false);lamp(58,-58,false);lamp(-4,80,true);
-  lamp(12,80,false);lamp(-30,80,true);lamp(30,80,false);lamp(-70,80,false);lamp(70,80,false);
-  lamp(-4,100,true);lamp(-4,120,true);lamp(30,-90,false);lamp(-90,-60,false);lamp(90,-60,false);
+  lamp(-26,-6,true);lamp(-10,-100,true);lamp(36,-54,true);lamp(-72,-54,false);lamp(0,-90,false);
+  lamp(72,-54,true);lamp(-126,-54,true);lamp(126,-54,false);lamp(-90,-126,false);lamp(90,-126,false);
+  lamp(-36,0,true);lamp(36,36,true);lamp(-108,36,false);lamp(108,0,true);lamp(0,72,true);
+  lamp(-4,100,true);lamp(-4,120,true);lamp(-140,20,false);lamp(140,-20,false);lamp(60,-130,false);
 })();
 /* ---------- skyline & sky ---------- */
 (function skyline(){
@@ -787,7 +813,7 @@ function lamp(x,z,withLight){
   for(var k=0;k<26;k++){
     var a=k/26*Math.PI*2,r=rnd(190,240);
     var x=Math.cos(a)*r,z=Math.sin(a)*r-20;
-    if(z>70)continue;
+    if(z>75)continue;
     var h=rnd(20,60);
     var b=new THREE.Mesh(new THREE.BoxGeometry(rnd(14,30),h,rnd(14,30)),m);
     b.position.set(x,h/2,z);scene.add(b);
@@ -951,8 +977,8 @@ var COATS=[0x6a4a3a,0x3a4a6a,0x4a6a4a,0x6a3a4a,0x555a66,0x6a5a2a,0x2f3f4f,0x5433
 /* pedestrians on street grid */
 var peds=[];
 (function makePeds(){
-  for(var p=0;p<14;p++){
-    var ix=ri(0,5),iz=ri(0,5);
+  for(var p=0;p<26;p++){
+    var ix=ri(0,7),iz=ri(0,7);
     var mesh=pedMesh(COATS[p%COATS.length]);
     mesh.position.set(L[ix],0,L[iz]);
     scene.add(mesh);
@@ -964,7 +990,7 @@ function pedNextNode(pd){
   var dx=[-1,1,0,0],dz=[0,0,-1,1],dirs=[];
   for(var k=0;k<4;k++){
     var nx=pd.node[0]+dx[k],nz=pd.node[1]+dz[k];
-    if(nx>=0&&nx<=5&&nz>=0&&nz<=5)dirs.push([nx,nz]);
+    if(nx>=0&&nx<=7&&nz>=0&&nz<=7)dirs.push([nx,nz]);
   }
   pd.target=dirs[ri(0,dirs.length-1)];
 }
@@ -1003,12 +1029,12 @@ function makeCop(ix,iz){
   cops.push({mesh:g,cone:cone,coneMat:coneMat,node:[ix,iz],target:[ix,iz],t:0,pause:rnd(0,2),
     mode:'patrol',giveUpT:0,bob:Math.random()*10});
 }
-(function(){makeCop(2,1);makeCop(3,3);makeCop(1,4)})();
+(function(){makeCop(2,2);makeCop(4,4);makeCop(1,6);makeCop(6,3)})();
 function copNextNode(cp){
   var dx=[-1,1,0,0],dz=[0,0,-1,1],dirs=[];
   for(var k=0;k<4;k++){
     var nx=cp.node[0]+dx[k],nz=cp.node[1]+dz[k];
-    if(nx>=0&&nx<=5&&nz>=0&&nz<=5)dirs.push([nx,nz]);
+    if(nx>=0&&nx<=7&&nz>=0&&nz<=7)dirs.push([nx,nz]);
   }
   cp.target=dirs[ri(0,dirs.length-1)];
 }
@@ -1216,10 +1242,10 @@ function movePlayer(dt){
   var sp=(sprint?9.4:5.6)*dt;
   var f={x:-Math.sin(yaw),z:-Math.cos(yaw)},r={x:Math.cos(yaw),z:-Math.sin(yaw)};
   var mx=0,mz=0;
-  if(keys['keyw']){mx+=f.x;mz+=f.z}
-  if(keys['keys']){mx-=f.x;mz-=f.z}
-  if(keys['keya']){mx-=r.x;mz-=r.z}
-  if(keys['keyd']){mx+=r.x;mz+=r.z}
+  if(keys['w']){mx+=f.x;mz+=f.z}
+  if(keys['s']){mx-=f.x;mz-=f.z}
+  if(keys['a']){mx-=r.x;mz-=r.z}
+  if(keys['d']){mx+=r.x;mz+=r.z}
   var ml=Math.sqrt(mx*mx+mz*mz);
   if(ml>0&&!panelOpen()){
     mx/=ml;mz/=ml;
@@ -1248,7 +1274,7 @@ function collideWorld(p,r){
     if(p.z<86){p.x=clamp(p.x,-119,119)}
     else{p.x=clamp(p.x,-7.4,7.4);p.z=Math.min(p.z,131.2)}
   }
-  p.x=clamp(p.x,-135,135);p.z=clamp(p.z,-133,131.2);
+  p.x=clamp(p.x,-175,175);p.z=clamp(p.z,-165,131.2);
 }
 function updateCamera(){
   var t=player.position;
@@ -1296,8 +1322,9 @@ function zoneName(){
   if(x>400)return 'LUCKY NINE CLUB';
   if(z>82)return z>95?'PIER END':'BOARDWALK';
   if(Math.abs(x-STILL.x)<12&&Math.abs(z-STILL.z)<12)return 'STILL ALLEY';
-  if(Math.abs(x-POLICE.x)<16&&Math.abs(z-POLICE.z)<16)return 'PRECINCT';
+  if(Math.abs(x-POLICE.x)<18&&Math.abs(z-POLICE.z)<18)return 'PRECINCT';
   if(Math.abs(x-PLAZA.x)<18&&Math.abs(z-PLAZA.z)<18)return 'PLAZA';
+  if(Math.abs(x)<160&&Math.abs(x)>90)return 'WESTSIDE';
   return x<0?'OLD TOWN':'EASTSIDE';
 }
 function objectiveText(){
@@ -1692,16 +1719,19 @@ function miniInit(){
 }
 function miniDraw(){
   if(!miniCv||!player)return;
-  var g=miniCv,SCL=0.55,CX=75,CZ=75,RANGE=130;
+  var g=miniCv,SCL=0.42,CX=75,CZ=75,RANGE=170;
   g.clearRect(0,0,150,150);
   g.fillStyle='rgba(10,10,16,.85)';g.fillRect(0,0,150,150);
   function mx(wx){return CX+wx*SCL}
   function mz(wz){return CZ+wz*SCL}
   /* streets */
-  g.strokeStyle='rgba(255,255,255,.14)';g.lineWidth=3;
+  g.strokeStyle='rgba(255,255,255,.14)';g.lineWidth=2;
+  var MS=0.42;
+  function mx(wx){return 75+wx*MS}
+  function mz(wz){return 75+wz*MS}
   L.forEach(function(s){
-    g.beginPath();g.moveTo(mx(-126),mz(s));g.lineTo(mx(126),mz(s));g.stroke();
-    g.beginPath();g.moveTo(mx(s),mz(-126));g.lineTo(mx(s),mz(72));g.stroke();
+    g.beginPath();g.moveTo(mx(-160),mz(s));g.lineTo(mx(160),mz(s));g.stroke();
+    g.beginPath();g.moveTo(mx(s),mz(-160));g.lineTo(mx(s),mz(80));g.stroke();
   });
   /* landmarks */
   g.fillStyle='#c9a2ff';g.fillRect(mx(STILL.x)-3,mz(STILL.z)-3,6,6);      /* still */
@@ -1987,7 +2017,9 @@ function weatherTick(dt){
   var on=w.intensity>0.05;
   w.pts.visible=on;if(!on)return;
   w.mat.opacity=0.55*w.intensity;
-  var arr=w.geo.attributes.position.array;
+  var attr=w.geo.attributes&&w.geo.attributes.position;
+  var arr=attr?attr.array:null;
+  if(!arr)return;
   for(var i=0;i<arr.length;i+=3){
     arr[i+1]-=(w.vel?w.vel[i/3]:22)*dt;
     if(arr[i+1]<0){arr[i]=player.position.x+rnd(-70,70);
@@ -2176,7 +2208,7 @@ $('endBtn').onclick=function(){
   S.debt=0;S.defaults=0;S.collector=false;S.rival={active:false,goneUntilDay:0};
   if(vinnie)vinnie.visible=false;
   if(collector)collector.visible=false;
-  S.pos=[-18,-2];S.yaw=-2.2;
+  S.pos=[-26,-12];S.yaw=-2.4;
   start(true);
 };
 if(localStorage.getItem(SAVEKEY))$('continueBtn').classList.remove('hidden');

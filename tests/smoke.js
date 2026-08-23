@@ -104,6 +104,7 @@ function mat(o){o=o||{};const out={opacity:o.opacity!==undefined?o.opacity:1,
   depthWrite:o.depthWrite,side:o.side,map:o.map};
   if(out.map&&typeof out.map==='object'){out.map.magFilter=0;out.map.wrapS=0;out.map.wrapT=0;
     out.map.repeat={set(){}};}
+  out.clone=function(){return mat(out)};
   return out}
 const THREE={
   Vector3:V3,Color:Col,NearestFilter:1,
@@ -129,6 +130,13 @@ const THREE={
   BufferGeometry:class{constructor(){this.attributes={}}
     setAttribute(n,a){this.attributes[n]=a;return this}
     setFromPoints(){return this}},
+  Shape:class{constructor(){this.commands=[]}
+    moveTo(x,y){this.commands.push(['m',x,y]);return this}
+    lineTo(x,y){this.commands.push(['l',x,y]);return this}
+    closePath(){this.commands.push(['z']);return this}},
+  ExtrudeGeometry:class{constructor(){this.attributes={
+    position:{count:100,getX:()=>0,getY:()=>0,setZ(){},
+      array:new Float32Array(300),needsUpdate:false}}}},
   Float32BufferAttribute:class{},
   CanvasTexture:class{constructor(){
     this.magFilter=0;this.wrapS=0;this.wrapT=0;this.repeat={set(){}};
@@ -244,7 +252,8 @@ check('stray E opens nothing',!vis('bwPanel')&&!vis('bjPanel')&&!vis('shPanel'))
 
 /* ---- BREW (walk to still via save-relocate, then real E) ---- */
 key('escape');pump(2);
-relocate(34,-56,-1.57);
+relocate(-74,-56,-1.57);
+dbg('at still');
 pressE();
 check('still panel opens via E',vis('bwPanel'));
 click('bwStart');
