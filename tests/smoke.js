@@ -4,7 +4,7 @@
 'use strict';
 const fs=require('fs'),path=require('path'),vm=require('vm');
 const html=fs.readFileSync(path.join(__dirname,'..','MARKER.html'),'utf8');
-const m=html.match(/<script>\n([\s\S]*?)<\/script>\s*<\/body>/);
+const m=html.match(/<script>\r?\n([\s\S]*?)<\/script>\s*<\/body>/);
 if(!m){console.error('FAIL: could not extract game script');process.exit(1);}
 const src=m[1];
 
@@ -76,7 +76,8 @@ const ctx2d={fillStyle:'',font:'',textAlign:'',textBaseline:'',
   beginPath(){},moveTo(){},lineTo(){},arc(){},fill(){},stroke(){},
   closePath(){},
   save(){},restore(){},translate(){},rotate(){},clearRect(){ctxOps++},
-  createRadialGradient:()=>({addColorStop(){}})};
+  createRadialGradient:()=>({addColorStop(){}}),
+  createLinearGradient:()=>({addColorStop(){}})};
 const canvasStub=()=>({width:64,height:64,getContext:()=>ctx2d});
 
 /* ---------------- THREE stub ---------------- */
@@ -85,7 +86,8 @@ class V3{constructor(a,b,c){this.x=a||0;this.y=b||0;this.z=c||0}
   copy(v){this.x=v.x;this.y=v.y;this.z=v.z;return this}
   distanceTo(v){const dx=this.x-v.x,dy=this.y-v.y,dz=this.z-v.z;
     return Math.sqrt(dx*dx+dy*dy+dz*dz)}
-  lookAt(){}}
+  lookAt(){}
+  setScalar(s){this.x=s;this.y=s;this.z=s;return this}}
 class Col{constructor(a,b,c){
   if(b!==undefined){this.r=a;this.g=b;this.b=c}
   else if(typeof a==='number'){this.setHex(a)}
@@ -94,7 +96,8 @@ class Col{constructor(a,b,c){
   copy(v){this.r=v.r;this.g=v.g;this.b=v.b;return this}}
 function baseObj(){return{position:new V3(),rotation:new V3(),scale:new V3(1,1,1),
   visible:true,material:{color:new Col(),opacity:1,transparent:true},
-  children:[],userData:{},add(...o){o.forEach(x=>this.children.push(x))}}}
+  children:[],userData:{},add(...o){o.forEach(x=>this.children.push(x))},
+  setScalar(s){this.scale.x=this.scale.y=this.scale.z=s;return this}}}
 function mat(o){o=o||{};const out={opacity:o.opacity!==undefined?o.opacity:1,
   transparent:!!o.transparent,color:new Col(typeof o.color==='number'?o.color:0x888888),
   emissive:new Col(typeof o.emissive==='number'?o.emissive:0),
@@ -111,17 +114,21 @@ const THREE={
     remove(o){this.children=this.children.filter(x=>x!==o)}},
   PerspectiveCamera:class{constructor(){this.position=new V3();this.aspect=1}
     lookAt(){}updateProjectionMatrix(){}},
-  WebGLRenderer:class{constructor(){this.domElement=canvasStub()}
+  WebGLRenderer:class{constructor(){this.domElement=canvasStub();this.shadowMap={}}
     setPixelRatio(){}setSize(){}render(){}},
   Group:class{constructor(){Object.assign(this,baseObj())}},
-  Mesh:class{constructor(g,mm){Object.assign(this,baseObj());
+  Mesh:class{constructor(g,mm){Object.assign(this,baseObj());this.geometry=g||{};
     this.material=Array.isArray(mm)?mm[0]:(mm||this.material)}},
   Sprite:class{constructor(m){Object.assign(this,baseObj());this.material=m}},
   Points:class{constructor(g,m){Object.assign(this,baseObj());this.material=m}},
-  BoxGeometry:class{},PlaneGeometry:class{},CylinderGeometry:class{},ConeGeometry:class{},
+  BoxGeometry:class{},CylinderGeometry:class{},ConeGeometry:class{},
   SphereGeometry:class{},TorusGeometry:class{},
+  PlaneGeometry:class{constructor(){this.attributes={
+    position:{count:100,getX:()=>0,getY:()=>0,setZ(){},
+      array:new Float32Array(300),needsUpdate:false}}}},
   BufferGeometry:class{constructor(){this.attributes={}}
-    setAttribute(n,a){this.attributes[n]=a;return this}},
+    setAttribute(n,a){this.attributes[n]=a;return this}
+    setFromPoints(){return this}},
   Float32BufferAttribute:class{},
   CanvasTexture:class{constructor(){
     this.magFilter=0;this.wrapS=0;this.wrapT=0;this.repeat={set(){}};
@@ -132,7 +139,8 @@ const THREE={
   MeshLambertMaterial:class{constructor(o){Object.assign(this,mat(o))}},
   PointsMaterial:class{constructor(o){Object.assign(this,{opacity:1},o)}},
   HemisphereLight:class{constructor(){Object.assign(this,baseObj());this.intensity=1}},
-  DirectionalLight:class{constructor(){Object.assign(this,baseObj());this.intensity=1}},
+  DirectionalLight:class{constructor(){Object.assign(this,baseObj());this.intensity=1;
+    this.castShadow=false;this.shadow={mapSize:{},camera:{}}}},
   PointLight:class{constructor(){Object.assign(this,baseObj());this.intensity=1}}};
 
 /* ---------------- sandbox ---------------- */
@@ -165,7 +173,8 @@ function check(name,cond,extra){
   if(!cond)failures++;
 }
 check('game script evaluates without throwing',true);
-check('no bootErr (THREE present)',!elems.bootErr.textContent);
+check('no bootErr (THREE present)',!elems.bootErr.textContent,
+  JSON.stringify(elems.bootErr.textContent).slice(0,80));
 
 /* ---------------- helpers ---------------- */
 function key(k,down=true){
@@ -182,7 +191,7 @@ function pump(frames,dt=16){
     const q=rafQ.splice(0);rafQ=[];
     if(q.length===0)deadFrames++;
     q.forEach(f=>{try{f(FT)}catch(e){
-      console.log('FAIL*** | frame threw :: '+e.message+'\n'+e.stack.split('\n')[1]);
+      console.log('FAIL*** | frame threw :: '+e.message+'\n'+e.stack.split('\n').slice(1,4).join('\n'));
       process.exit(1);}});
     flushTimers(0);
   }
