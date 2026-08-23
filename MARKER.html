@@ -60,6 +60,7 @@
   #toasts{position:absolute;right:14px;bottom:90px;display:flex;flex-direction:column;gap:6px;align-items:flex-end}
   #mini{position:absolute;right:10px;bottom:10px;border:1px solid var(--line);
     background:rgba(8,8,12,.75)}
+  #debtV{color:#ff7b7b}
   #tint{position:fixed;inset:0;z-index:6;pointer-events:none;opacity:0;
     transition:opacity .4s;box-shadow:inset 0 0 170px rgba(255,45,45,.6)}
   .toast{background:rgba(10,9,12,.92);border-left:3px solid var(--amber);padding:8px 14px;font-size:13px;
@@ -126,13 +127,14 @@
 <div id="boot">
   <div id="bootCard">
     <div id="bootTitle">MARKER</div>
-    <div id="bootTag">BOOTLEG BY NIGHT · BREAK THE BANK BY MORNING · PLAYABLE SLICE v2</div>
+    <div id="bootTag">BOOTLEG BY NIGHT · BREAK THE BANK BY MORNING · PLAYABLE SLICE v3</div>
     <div id="bootHelp">
       <b>WASD</b> move · <b>SHIFT</b> sprint · <b>MOUSE</b> (click page to lock) or <b>←→</b> look · <b>E</b> interact · <b>ESC</b> release/close<br>
       Brew hooch at the alley still · sell it on the street · launder dirty cash at the Lucky Nine's cage ·
       gamble your crew's money · <b>make rent every 3 days or lose everything.</b><br>
       Goal: <b>$20,000</b>. Yellow cones are cop sightlines — red means RUN.
       Bottom-right minimap tracks you, patrols, and hot spots.
+      Flush-broke? Sign <b>markers</b> at the cage — default twice and a collector visits. <b>M</b> mutes.
     </div>
     <button class="bigbtn" id="beginBtn" type="button">NEW GAME</button>
     <button class="bigbtn ghost hidden" id="continueBtn" type="button">CONTINUE</button>
@@ -146,6 +148,7 @@
   <div id="top">
     <span class="stat"><span class="lab">CASH</span><span class="val" id="cashV">$0</span></span>
     <span class="stat"><span class="lab">CHIPS</span><span class="val" id="chipsV">0</span></span>
+    <span class="stat" id="debtWrap" style="display:none"><span class="lab">DEBT</span><span class="val" id="debtV">$0</span></span>
     <span class="stat"><span class="lab">HOOCH</span><span class="val" id="hoochV">0🥃</span></span>
     <span class="stat"><span class="lab">DAY</span><span class="val" id="dayV">1</span></span>
     <span class="stat"><span class="lab">TIME</span><span class="val" id="clockV">08:00</span></span>
@@ -240,6 +243,24 @@
     <button class="btn" id="cgBuy100" type="button">BUY $100 IN CHIPS</button>
     <button class="btn" id="cgSellAll" type="button">CASH OUT CHIPS</button>
   </div>
+  <div class="feltline"></div>
+  <div class="sub">MARKERS — the house fronts you chips, you sign an IOU. 30% vig, 15% nightly interest. Default twice and someone visits.</div>
+  <div class="kv"><span>Outstanding markers: <b id="cgDebtV">$0</b></span></div>
+  <div class="row">
+    <button class="btn danger" id="cgMarker200" type="button">SIGN $200 MARKER (+$200 chips, owe $260)</button>
+    <button class="btn primary" id="cgSettle" type="button">SETTLE MARKERS</button>
+  </div>
+</div>
+
+<!-- RIVAL -->
+<div id="rvPanel" class="panel hidden">
+  <button class="xbtn" id="rvClose" type="button">✕</button>
+  <h3>VINNIE'S CORNER</h3>
+  <div class="sub">He sells on YOUR plaza. Every bottle you move while he's pitching goes for 25% less.</div>
+  <div class="kv"><span>Cash: <b id="rvCashV">$0</b></span><span>Rep: <b id="rvRepV">0</b></span><span>Back on the corner: <b id="rvBackV">tonight</b></span></div>
+  <div class="row"><button class="btn primary" id="rvSilence" type="button">BUY HIS SILENCE — $150 (gone 1 day)</button></div>
+  <div class="row"><button class="btn primary" id="rvCops" type="button">TIP THE FEDS — $100 + heat (gone 3 days)</button></div>
+  <div class="row"><button class="btn primary" id="rvTwins" type="button">SEND THE TWINS — free, rep 5+, big heat (gone 5 days)</button></div>
 </div>
 
 <!-- SHOP -->
@@ -261,7 +282,10 @@
     <b style="color:var(--ink)">3.</b> Don't deal near cops — yellow cones are their sight. Red means RUN.<br>
     <b style="color:var(--ink)">4.</b> Lucky Nine club (west block): stock the bar, wash cash at the cage, play cards &amp; dice.<br>
     <b style="color:var(--ink)">5.</b> Salty's on the pier sells gear: faster still, quiet shoes, loaded dice, marked deck, bigger laundry, city ledger.<br>
-    <b style="color:var(--ink)">6.</b> RENT every 3 days, rising fast. Miss one and you're on the street. Reach <b style="color:var(--ink)">$20,000</b> to own the city.
+    <b style="color:var(--ink)">6.</b> RENT every 3 days, rising fast. Miss one and you're on the street. Reach <b style="color:var(--ink)">$20,000</b> to own the city.<br>
+    <b style="color:var(--ink)">7.</b> Broke? Sign MARKERS at the cage. Default twice and a collector hunts you down.<br>
+    <b style="color:var(--ink)">8.</b> Vinnie pitches on the plaza evenings — buy him off, tip the feds, or send the twins.<br>
+    <b style="color:var(--ink)">M</b> mutes sound. Stock the bar before 20:00 — the night crowd plays hard.
   </div>
 </div>
 
@@ -292,6 +316,8 @@ var S={
   upgrades:{coil:false,shoes:false,dice:false,deck:false,contract:false,ledger:false},
   diceLeft:0,
   washed:0, cap:300,
+  debt:0, defaults:0, collector:false,
+  rival:{active:false,goneUntilDay:0},
   soldOnce:false, brewedOnce:false, playedBJ:false,
   pos:[-18,-2], yaw:-2.2,
   rentDueNext:false,
@@ -306,6 +332,7 @@ function save(){
       rentPending:S.rentPending,rentAmt:S.rentAmt,rentDueDay:S.rentDueDay,
       brew:S.brew,brewT:S.brewT,lastQ:S.lastQ,barStock:S.barStock,upgrades:S.upgrades,
       washed:S.washed,cap:S.cap,diceLeft:S.diceLeft,soldOnce:S.soldOnce,brewedOnce:S.brewedOnce,playedBJ:S.playedBJ,
+      debt:S.debt,defaults:S.defaults,collector:S.collector,rival:S.rival,
       pos:p,yaw:round2(yaw)}));
   }catch(e){}
 }
@@ -317,6 +344,10 @@ function loadSave(){
     ['cash','chips','hooch','day','min','heat','rep','rentPending','rentAmt','rentDueDay',
      'brew','brewT','lastQ','barStock','washed','cap','diceLeft','soldOnce','brewedOnce','playedBJ'].forEach(function(k){
       if(d[k]!==undefined)S[k]=d[k];});
+    if(d.debt!==undefined)S.debt=d.debt;
+    if(d.defaults!==undefined)S.defaults=d.defaults;
+    if(d.collector!==undefined)S.collector=d.collector;
+    if(d.rival)S.rival=d.rival;
     if(d.upgrades)S.upgrades=d.upgrades;
     if(d.pos)S.pos=d.pos;
     if(d.yaw!==undefined)S.yaw=d.yaw;
@@ -327,6 +358,7 @@ function wipe(){try{localStorage.removeItem(SAVEKEY)}catch(e){}}
 
 /* ============================================================ audio */
 var AC=null,master=null,siren=null;
+var muted=false,amb=null,clubLoop=null;
 function ac(){
   if(!AC){try{AC=new (window.AudioContext||window.webkitAudioContext)();
     master=AC.createGain();master.gain.value=0.16;master.connect(AC.destination);}catch(e){}}
@@ -370,6 +402,37 @@ function sirenOff(){
   try{siren.g.gain.setTargetAtTime(0.0001,AC.currentTime,0.2);
     setTimeout(function(){try{siren.o.stop();siren.l.stop()}catch(e){}siren=null},600);
   }catch(e){siren=null}
+}
+function toggleMute(){
+  muted=!muted;
+  if(master)master.gain.value=muted?0:0.16;
+  toast(muted?'🔇 Muted.':'🔊 Sound on.','info');
+}
+/* looping noise buffer through a biquad — city hiss / club murmur */
+function makeNoise(a,freq,q,gain){
+  try{
+    var len=2*a.sampleRate,buf=a.createBuffer(1,len,a.sampleRate),d=buf.getChannelData(0);
+    for(var i=0;i<len;i++)d[i]=Math.random()*2-1;
+    var src=a.createBufferSource();src.buffer=buf;src.loop=true;
+    var flt=a.createBiquadFilter();flt.type='lowpass';flt.frequency.value=freq;flt.Q.value=q;
+    var g=a.createGain();g.gain.value=gain;
+    src.connect(flt);flt.connect(g);g.connect(master);src.start();
+    return {src:src,g:g,flt:flt};
+  }catch(e){return null}
+}
+function startAmbience(){
+  var a=ac();if(!a||amb)return;
+  amb=makeNoise(a,320,0.7,0.035);
+}
+function clubAudioTick(){
+  var a=AC;if(!a)return;
+  var inside=(player&&player.position.x>400);
+  if(inside&&!clubLoop){clubLoop=makeNoise(a,700,1.4,0.05)}
+  else if(!inside&&clubLoop){
+    try{clubLoop.g.gain.setTargetAtTime(0.0001,a.currentTime,0.3);
+      setTimeout(function(){try{clubLoop.src.stop()}catch(e){}clubLoop=null},900);
+    }catch(e){clubLoop=null}
+  }
 }
 
 /* ============================================================ three setup */
@@ -903,6 +966,81 @@ function alertNearestCop(){
   if(best&&bd<26){best.mode='chase';sirenOn();toast('🚨 That deal was seen. RUN!','bad')}
 }
 
+/* ---------------- RIVAL CREW: Vinnie works the plaza evenings ---------------- */
+var vinnie=null;
+function makeVinnie(){
+  vinnie=pedMesh(0x7a2830);                    /* maroon suit, bad attitude */
+  scene.add(vinnie);
+}
+function vinnieShouldWork(){
+  var h=S.min/60;
+  return rivalActive()?false:(h>=17||h<2);     /* evenings until 2 AM */
+}
+function vinnieUpdate(dt){
+  if(!vinnie)return;
+  if(vinnieShouldWork()){
+    if(!vinnie.visible){
+      vinnie.visible=true;
+      toast("Vinnie's crew is pitching on the plaza. He's undercutting you.",'bad');
+    }
+    /* lazy figure-8 loiter around plaza center */
+    var t=nowSec*0.4;
+    vinnie.position.set(PLAZA.x+Math.sin(t)*6,0,PLAZA.z-10+Math.sin(t*2.3)*3);
+    vinnie.rotation.y=Math.atan2(Math.cos(t),Math.cos(t*2.3));
+  }else if(vinnie.visible){
+    vinnie.visible=false;
+  }
+}
+
+/* ---------------- COLLECTOR: visits those who default ---------------- */
+var collector=null;
+function makeCollector(){
+  collector=pedMesh(0x1c1c22);
+  var hat=new THREE.Mesh(new THREE.BoxGeometry(0.55,0.12,0.55),
+    new THREE.MeshLambertMaterial({color:0x111116}));
+  hat.position.y=1.95;collector.add(hat);      /* wide-brim. you know what that means */
+  scene.add(collector);
+  collector.position.set(PLAZA.x+4,0,PLAZA.z+10);
+}
+function collectorActive(){
+  return S.collector&&S.debt>0&&!S.ended;
+}
+function collectorUpdate(dt){
+  if(!collector)return;
+  if(!collectorActive()){collector.visible=false;return}
+  collector.visible=!panelOpen();
+  if(collector.visible===false)return;
+  var vx=player.position.x-collector.position.x,vz=player.position.z-collector.position.z;
+  var dist=Math.sqrt(vx*vx+vz*vz);
+  var sp=3.1*dt;
+  if(dist>1.2){
+    collector.position.x+=vx/(dist||1)*sp;
+    collector.position.z+=vz/(dist||1)*sp;
+    collector.rotation.y=Math.atan2(vx,vz);
+  }else{
+    /* he catches you */
+    var got=Math.min(S.cash+S.chips+S.hooch*45,Math.round(S.debt*0.35)+40);
+    var need=got,c1=Math.min(S.cash,need);S.cash-=c1;need-=c1;
+    var c2=Math.min(S.chips,need);S.chips-=c2;need-=c2;
+    var b=Math.min(S.hooch,Math.ceil(need/45));S.hooch-=b;
+    var taken=c1+c2+b*45;
+    if(taken>0){
+      S.debt=Math.max(0,S.debt-taken);
+      sfx.bad();
+      var what=(b>0?(b+' bottle'+(b>1?'s':'')+' of hooch'):fmt(taken));
+      toast('🦍 The collector took '+what+'. "Debts get paid, one way or another."','bad');
+      if(S.debt<=0){S.collector=false;S.defaults=0;toast('Debt cleared the hard way.','good')}
+    }else{
+      /* broke and beaten: he halves the debt and gives you one cycle */
+      S.debt=Math.round(S.debt*0.5);S.collector=false;S.defaults=1;
+      sfx.bad();
+      toast('🦍 Broke and beaten. He shakes you down for interest. "You have a week."','bad');
+    }
+    teleport(PLAZA.x+4,PLAZA.z+10,-1.2,null);
+    hudSync();save();
+  }
+}
+
 /* ---------- player ---------- */
 var player=null,yaw=S.yaw,pitch=0.34,keys={},locked=false;
 var lastCrime=-999,nowSec=0,started=false;
@@ -974,6 +1112,7 @@ function toast(msg,cls){
   while($('toasts').children.length>5)$('toasts').firstChild.remove();
 }
 var PANELS=['bjPanel','dcPanel','bwPanel','cgPanel','shPanel','hpPanel'];
+PANELS.push('rvPanel');
 var currentPanel=null;
 function openPanel(id){
   closePanels(true);
@@ -985,6 +1124,7 @@ function openPanel(id){
   if(id==='bwPanel')bwRender();
   if(id==='cgPanel')cgRender();
   if(id==='shPanel')shRender();
+  if(id==='rvPanel')rvRender();
 }
 function closePanels(silent){
   PANELS.forEach(function(p){$(p).classList.add('hidden')});
@@ -1017,6 +1157,8 @@ function objectiveText(){
 function hudSync(){
   $('cashV').textContent=fmt(S.cash);
   $('chipsV').textContent=S.chips.toLocaleString('en-US');
+  $('debtWrap').style.display=S.debt>0?'':'none';
+  $('debtV').textContent=fmt(S.debt);
   $('hoochV').textContent=S.hooch+'🥃';
   $('dayV').textContent=S.day;
   var hh=Math.floor(S.min/60)%24,mm=Math.floor(S.min%60);
@@ -1060,7 +1202,8 @@ var INTERACT=[
   {x:INT.x-11.4,z:INT.z+7.4,r:3.2,label:'Laundering cage',fn:function(){openPanel('cgPanel')}},
   {x:595.5,z:-8.8,r:2.8,label:'Stock the bar',fn:stockBar},
   {x:4.5,z:105.4,r:3.4,label:"Salty's goods",fn:function(){openPanel('shPanel')}},
-  {x:-18,z:-2,r:3,label:'City notice board',fn:function(){openPanel('hpPanel')}}
+  {x:-18,z:-2,r:3,label:'City notice board',fn:function(){openPanel('hpPanel')}},
+  {vinnie:true,label:"Have a word with Vinnie",fn:function(){openPanel('rvPanel')}}
 ];
 function teleport(x,z,yawTo,msg){
   fadeFlash(function(){
@@ -1249,6 +1392,8 @@ function cgRender(){
   $('cgCashV').textContent=fmt(S.cash);
   $('cgChipV').textContent=S.chips.toLocaleString('en-US');
   $('cgCapV').textContent=S.washed+' / '+S.cap;
+  $('cgDebtV').textContent=fmt(S.debt);
+  $('cgSettle').disabled=(S.debt<=0||S.cash<=0);
 }
 function cgWash(amount){
   amount=Math.min(amount,S.cash);
@@ -1273,6 +1418,29 @@ function cgSell(){
   S.cash+=S.chips;S.chips=0;
   sfx.cash();toast('Chips cashed out — spotless money.','good');
   cgRender();hudSync();save();
+}
+
+/* ---------------- MARKERS: sign now, regret later ---------------- */
+function cgMarker(){
+  S.chips+=200;S.debt+=260;
+  sfx.chip();toast('Signed a marker: $200 in chips, $260 owed.','info');
+  cgRender();hudSync();save();
+}
+function cgSettle(){
+  if(S.debt<=0){toast('You owe the house nothing. Rare.','good');return}
+  var pay=Math.min(S.cash,S.debt);
+  if(pay<=0){toast('No cash to settle with. They know where you sleep.','bad');return}
+  S.cash-=pay;S.debt-=pay;
+  if(S.debt<=0){
+    toast('Markers burned. The pit boss nods once.','good');
+    S.defaults=0;if(S.collector){S.collector=false;toast('The collector lost interest.','good')}
+  }else{
+    toast('Paid down '+fmt(pay)+'. Still owe '+fmt(S.debt)+'.','info');
+  }
+  cgRender();hudSync();save();
+}
+function debtNightly(){
+  if(S.debt>0)S.debt=Math.round(S.debt*1.15);
 }
 
 /* ============================================================ SHOP */
@@ -1310,6 +1478,20 @@ function shBuy(it){
   shRender();hudSync();save();
 }
 
+/* ---------------- VINNIE'S PANEL ---------------- */
+function rvRender(){
+  $('rvCashV').textContent=fmt(S.cash);
+  $('rvRepV').textContent=S.rep;
+  $('rvBackV').textContent=rivalActive()?('day '+(S.rival.goneUntilDay+1)):'tonight';
+  $('rvSilence').disabled=S.cash<150;
+  $('rvCops').disabled=S.cash<100;
+  $('rvTwins').disabled=S.rep<5;
+}
+function rivalGone(days,msg){
+  S.rival.active=true;S.rival.goneUntilDay=S.day+days;
+  sfx.cash();toast(msg,'good');rvRender();hudSync();save();
+}
+
 /* ============================================================ SELLING */
 function nearestPed(maxD){
   if(player.position.x>400)return null;
@@ -1322,12 +1504,14 @@ function nearestPed(maxD){
   return best;
 }
 function quotePrice(q){return Math.round(26+q*20+S.rep*1.5)}
+function rivalActive(){return S.rival.active&&S.day<=S.rival.goneUntilDay}
 function sellPrice(q){return Math.round(quotePrice(q)*rnd(0.85,1.15))}
 function sellHooch(){
   var pd=nearestPed(3);
   if(!pd){toast('Nobody close enough to pitch.','bad');return}
   if(S.hooch<=0){toast("You're out of hooch.",'bad');return}
   var q=S.lastQ||3,price=sellPrice(q);
+  if(rivalActive()){price=Math.round(price*0.75)}
   S.hooch--;S.cash+=price;S.rep=Math.min(99,S.rep+1);
   S.soldOnce=true;lastCrime=nowSec;pd.cool=45;
   sfx.cash();toast('Sold a bottle for '+fmt(price)+'.',"good");
@@ -1390,6 +1574,14 @@ function nearestInteract(){
   var best=null,bd=1e9;
   for(var k=0;k<INTERACT.length;k++){
     var it=INTERACT[k];
+    if(it.vinnie){
+      /* live position: only when Vinnie is actually on the corner */
+      if(!vinnie||!vinnie.visible)continue;
+      var dxv=player.position.x-vinnie.position.x,dzv=player.position.z-vinnie.position.z;
+      var d2v=dxv*dxv+dzv*dzv;
+      if(d2v<9&&d2v<bd){bd=d2v;best=it}
+      continue;
+    }
     var dx=player.position.x-it.x,dz=player.position.z-it.z;
     var d2=dx*dx+dz*dz,r=it.r;
     if(d2<r*r&&d2<bd){bd=d2;best=it}
@@ -1442,6 +1634,16 @@ function onMidnight(){
     S.rentAmt=nextRentAmt();
     toast('RENT DAY. Landlord wants '+fmt(S.rentAmt)+' by tonight.','bad');
   }
+  /* markers: nightly interest + default accounting */
+  if(S.debt>0){
+    debtNightly();
+    S.defaults++;
+    if(S.defaults===1)toast('The pit boss mentions your markers. Settle soon.','bad');
+    if(S.defaults>=2&&!S.collector){
+      S.collector=true;
+      toast('🦍 Word is a collector has your description. Pay or run.','bad');
+    }
+  }
   if(S.rentPending&&S.day>S.rentDueDay){
     endGame('evicted');
   }
@@ -1449,14 +1651,19 @@ function onMidnight(){
 }
 function barHour(){
   if(S.barStock<=0)return;
+  var h=S.min/60;
+  var rush=(h>=20||h<1);                    /* the night crowd plays hard */
+  var perHour=rush?ri(1,4):ri(0,2);
+  var priceMul=rush?1.5:1;
   var sold=0,earn=0;
-  var n=Math.min(S.barStock,ri(0,2));
+  var n=Math.min(S.barStock,perHour);
   for(var k=0;k<n;k++){
-    sold++;earn+=ri(14,26);
+    sold++;earn+=Math.round(ri(14,26)*priceMul);
   }
   if(sold>0){
     S.barStock-=sold;S.cash+=earn;
-    toast('Bar sold '+sold+' bottle'+(sold>1?'s':'')+' — '+fmt(earn)+' (clean-ish).','info');
+    toast('Bar sold '+sold+' bottle'+(sold>1?'s':'')+' — '+fmt(earn)+
+      (rush?' (night prices).':' (clean-ish).'),'info');
     hudSync();
   }
 }
@@ -1520,6 +1727,7 @@ window.addEventListener('keydown',function(e){
     if(it){it.fn();return}
     if(nearestPed(3.2)){sellHooch()}
   }
+  if(k==='m'&&!panelOpen()){toggleMute()}
 });
 window.addEventListener('keyup',function(e){keys[e.key.toLowerCase()]=false});
 canvas.addEventListener('click',function(){
@@ -1568,6 +1776,12 @@ $('cgL100').onclick=function(){cgWash(100)};
 $('cgLAll').onclick=function(){cgWash(S.cash)};
 $('cgBuy100').onclick=cgBuy;
 $('cgSellAll').onclick=cgSell;
+$('cgMarker200').onclick=cgMarker;
+$('cgSettle').onclick=cgSettle;
+$('rvClose').onclick=function(){closePanels()};
+$('rvSilence').onclick=function(){if(S.cash>=150){S.cash-=150;rivalGone(1,"Vinnie takes the envelope. 'Pleasure doing business.' He's gone tomorrow.")}};
+$('rvCops').onclick=function(){if(S.cash>=100){S.cash-=100;S.heat=clamp(S.heat+12,0,100);rivalGone(3,"Anonymous tip filed. Vinnie's cooling his heels downtown for three days.")}};
+$('rvTwins').onclick=function(){if(S.rep>=5){rivalGone(5,"The Henderson twins had a word with Vinnie. He won't sit down for a week.");S.heat=clamp(S.heat+25,0,100)}};
 $('payRentBtn').onclick=payRent;
 
 /* ============================================================ SKY / NIGHT */
@@ -1629,6 +1843,9 @@ function start(fresh){
   player.position.set(S.pos[0],0,S.pos[1]);
   yaw=S.yaw;
   started=true;
+  if(!vinnie)makeVinnie();
+  if(!collector)makeCollector();
+  startAmbience();
   miniInit();
   var mc=$('mini');if(mc)mc.classList.remove('hidden');
   ac();
@@ -1649,6 +1866,9 @@ $('endBtn').onclick=function(){
   S.brew='idle';S.brewT=0;S.lastQ=0;S.barStock=0;S.washed=0;S.cap=300;S.diceLeft=0;
   S.upgrades={coil:false,shoes:false,dice:false,deck:false,contract:false,ledger:false};
   S.soldOnce=false;S.brewedOnce=false;S.playedBJ=false;
+  S.debt=0;S.defaults=0;S.collector=false;S.rival={active:false,goneUntilDay:0};
+  if(vinnie)vinnie.visible=false;
+  if(collector)collector.visible=false;
   S.pos=[-18,-2];S.yaw=-2.2;
   start(true);
 };
@@ -1667,6 +1887,9 @@ function loop(t){
     bwTick(dt);
     peds.forEach(function(p){pedUpdate(p,dt,nowSec)});
     cops.forEach(function(c){copUpdate(c,dt,nowSec)});
+    vinnieUpdate(dt);
+    collectorUpdate(dt);
+    clubAudioTick();
     if(netWorth()>=20000)endGame('win');
     saveAcc+=dt;
     if(saveAcc>5){saveAcc=0;save()}
@@ -1685,6 +1908,7 @@ window.__MARKER={S:function(){return S},
   near:function(){var it=nearestInteract();return it?it.label:null},
   pedNear:function(){return nearestPed(9999)||peds[0]},
   cops:function(){return cops.length},
+  vinniePos:function(){return vinnie&&vinnie.visible?{x:vinnie.position.x,z:vinnie.position.z}:null},
   bjSnap:function(){try{return{phase:bj.phase,bet:bj.bet,pcards:bj.p.length,dcards:bj.d.length,
     chips:S.chips,msg:document.getElementById('bjMsg').textContent}}catch(e){return {err:e.message}}},
   pedFreeze:function(){var p=nearestPed(9999);if(p){p.pause=1e9;p.mesh.position.set(base.__x||20.9,0,base.__z||-40)}return p?{x:p.mesh.position.x,z:p.mesh.position.z}:null}};

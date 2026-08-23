@@ -42,9 +42,11 @@ const IDS=['boot','c','hud','vignette','fade','crosshair','prompt','toasts','obj
  'bjBet10','bjBet50','bjBet100','bjBetClr','bjDeal','bjHit','bjStand','bjDouble',
  'dcB10','dcB50','dcB100','dcU','dcS','dcO','bwStart','bwCollect',
  'cgL50','cgL100','cgLAll','cgBuy100','cgSellAll'];
+IDS.push('debtWrap','debtV','cgDebtV','rvPanel','rvCashV','rvRepV','rvBackV',
+'rvSilence','rvCops','rvTwins','tint','cgMarker200','cgSettle','rvClose');
 IDS.forEach(id=>elems[id]=makeEl('div',id));
 ['bjPanel','dcPanel','bwPanel','cgPanel','shPanel','hpPanel','bustedOv','endOv',
- 'hud','c','vignette','rentBox','prompt','mobileWarn','continueBtn'].forEach(
+'hud','c','vignette','rentBox','prompt','mobileWarn','continueBtn','rvPanel'].forEach(
   id=>elems[id].classList.add('hidden'));
 const document={
   getElementById:id=>elems[id]||(elems[id]=makeEl('div',id)),
@@ -342,6 +344,68 @@ check('heat 65+ spawns patrols',base.__MARKER.cops()>copsBefore,
 ctxOps=0;miniPump();
 function miniPump(){pump(2)}
 check('minimap draws each frame',ctxOps>4,String(ctxOps)+' ops');
+
+/* ---- MARKERS: sign, owe, default twice, collector visits ---- */
+relocate(589.6,6.4,-1.57);pressE();
+const debt0=saveState().debt;
+click('cgMarker200');click('cgMarker200');
+check('markers add chips + 30% vig',
+  saveState().chips>=400&&saveState().debt===debt0+520,
+  'debt '+debt0+'->'+saveState().debt+' chips '+saveState().chips);
+key('escape');pump(2);
+{ const d=saveState();d.cash=0;d.chips=0;   /* can't pay */
+  storage[SAVE]=JSON.stringify(d);click('continueBtn');pump(3); }
+{ /* two midnights with unpaid debt */
+  const d=saveState();d.min=1439;
+  storage[SAVE]=JSON.stringify(d);click('continueBtn');pump(500); }
+{ const d=saveState();d.min=1439;
+  storage[SAVE]=JSON.stringify(d);click('continueBtn');pump(500); }
+check('defaults accumulate -> collector activated',
+  saveState().collector===true,'defaults='+saveState().defaults);
+/* collector hunts: he starts at plaza and beelines; drop player near him */
+pump(600);                                  /* ~10s of pursuit from plaza spawn */
+relocate(-14,-64,3.14);                     /* stand in his path, out in the open */
+pump(1500);                                 /* ~24s: he closes and grabs you */
+console.log('[probe] player=',JSON.stringify(base.__MARKER.pos()),
+  'collectorActive=',base.__MARKER.S().collector);
+const afterCollector=saveState();
+check('collector caught the debtor (debt reduced or restructured)',
+  afterCollector.debt<688||afterCollector.collector===false,
+  'debt='+afterCollector.debt+' collector='+afterCollector.collector);
+/* settle the rest from cash */
+{ const d=saveState();d.cash=1000;
+  storage[SAVE]=JSON.stringify(d);click('continueBtn');pump(3); }
+relocate(589.6,6.4,-1.57);pressE();
+click('cgSettle');pump(2);
+check('settle burns markers',saveState().debt===0&&saveState().collector===false,
+  'debt='+saveState().debt);
+key('escape');pump(2);
+
+/* ---- VINNIE: evening appearance + diplomacy ---- */
+{ const d=saveState();d.min=18*60;d.rival={active:false,goneUntilDay:0};
+  storage[SAVE]=JSON.stringify(d);click('continueBtn');pump(5); }
+relocate(-18,-64,3.14);                    /* plaza, Vinnie's turf */
+pump(30);
+const vp=base.__MARKER.vinniePos();       /* stand ON Vinnie wherever he loiters */
+relocate(Math.round(vp.x*10)/10,Math.round(vp.z*10)/10,3.14);
+pressE();
+pump(30);
+check("Vinnie's panel opens via E",vis('rvPanel'),elems.prompt.innerHTML);
+click('rvSilence');pump(2);
+check('silence money sends Vinnie off',rivalGoneCheck(),JSON.stringify(saveState().rival));
+function rivalGoneCheck(){const r=saveState().rival;return r.active===true&&r.goneUntilDay>=saveState().day}
+key('escape');pump(2);
+
+/* ---- BAR RUSH HOUR ---- */
+{ const d=saveState();d.barStock=10;d.min=20*60+30;   /* 8:30 PM = rush */
+  storage[SAVE]=JSON.stringify(d);click('continueBtn');pump(3); }
+pump(3600);                                /* ~60s => several hour boundaries */
+check('bar sold during rush (stock dropped)',saveState().barStock<10,
+  'stock='+saveState().barStock);
+
+/* ---- MUTE TOGGLE ---- */
+key('m');pump(2);key('m',false);pump(2);
+check('mute toggle survives a frame (no crash)',true);
 
 /* ---- SHOP on pier ---- */
 relocate(4.5,105.2,0);pressE();
