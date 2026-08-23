@@ -58,6 +58,10 @@
     background:rgba(10,9,12,.82);border:1px solid var(--line);padding:9px 18px;color:var(--ink)}
   #prompt b{color:var(--amber)}
   #toasts{position:absolute;right:14px;bottom:90px;display:flex;flex-direction:column;gap:6px;align-items:flex-end}
+  #mini{position:absolute;right:10px;bottom:10px;border:1px solid var(--line);
+    background:rgba(8,8,12,.75)}
+  #tint{position:fixed;inset:0;z-index:6;pointer-events:none;opacity:0;
+    transition:opacity .4s;box-shadow:inset 0 0 170px rgba(255,45,45,.6)}
   .toast{background:rgba(10,9,12,.92);border-left:3px solid var(--amber);padding:8px 14px;font-size:13px;
     max-width:340px;animation:tIn .25s ease-out}
   .toast.bad{border-left-color:var(--red)} .toast.good{border-left-color:var(--green)} .toast.info{border-left-color:#7ecbff}
@@ -122,12 +126,13 @@
 <div id="boot">
   <div id="bootCard">
     <div id="bootTitle">MARKER</div>
-    <div id="bootTag">BOOTLEG BY NIGHT · BREAK THE BANK BY MORNING · PLAYABLE SLICE v1</div>
+    <div id="bootTag">BOOTLEG BY NIGHT · BREAK THE BANK BY MORNING · PLAYABLE SLICE v2</div>
     <div id="bootHelp">
       <b>WASD</b> move · <b>SHIFT</b> sprint · <b>MOUSE</b> (click page to lock) or <b>←→</b> look · <b>E</b> interact · <b>ESC</b> release/close<br>
       Brew hooch at the alley still · sell it on the street · launder dirty cash at the Lucky Nine's cage ·
       gamble your crew's money · <b>make rent every 3 days or lose everything.</b><br>
-      Goal: <b>$20,000</b>. Yellow cones are cop sightlines. Red cone means RUN.
+      Goal: <b>$20,000</b>. Yellow cones are cop sightlines — red means RUN.
+      Bottom-right minimap tracks you, patrols, and hot spots.
     </div>
     <button class="bigbtn" id="beginBtn" type="button">NEW GAME</button>
     <button class="bigbtn ghost hidden" id="continueBtn" type="button">CONTINUE</button>
@@ -152,10 +157,12 @@
   <div id="rentBox" class="hidden"><span id="rentLabel">RENT DUE</span> <span id="rentAmtV">$0</span><button id="payRentBtn" type="button">PAY</button></div>
   <div id="crosshair"></div>
   <div id="prompt" class="hidden"></div>
+  <canvas id="mini" width="150" height="150" class="hidden"></canvas>
   <div id="toasts"></div>
 </div>
 
 <div id="vignette" class="hidden"></div>
+<div id="tint"></div>
 
 <!-- BLACKJACK -->
 <div id="bjPanel" class="panel hidden">
@@ -881,6 +888,11 @@ function copUpdate(cp,dt,time){
   cm.y=Math.abs(Math.sin(time*6+cp.bob))*0.04;
 }
 function sirenIfQuiet(){if(!cops.some(function(c){return c.mode==='chase'}))sirenOff()}
+function spawnPatrol(){
+  var ix=ri(0,5),iz=ri(0,5);
+  makeCop(ix,iz);
+  toast('A cruiser just dropped a beat cop on the corner.','info');
+}
 function alertNearestCop(){
   var best=null,bd=1e9;
   cops.forEach(function(c){
@@ -895,8 +907,8 @@ function alertNearestCop(){
 var player=null,yaw=S.yaw,pitch=0.34,keys={},locked=false;
 var lastCrime=-999,nowSec=0,started=false;
 function makePlayer(){
+  if(player)scene.remove(player);
   player=pedMesh(0xb3772a);
-  player.position.set(S.pos[0],0,S.pos[1]);
   scene.add(player);
 }
 
@@ -1136,6 +1148,8 @@ function bjRender(){
   ph.innerHTML='';dh.innerHTML='';
   bj.p.forEach(function(c){ph.appendChild(cardEl(c,false))});
   var hideHole=(bj.phase==='player'&&bj.d.length>1);
+  if(S.upgrades.deck&&hideHole){hideHole=false;
+    $('bjMsg').textContent='Marked deck: dealer shows '+RANKS[bj.d[1].r]+SUITS[bj.d[1].s][0]+'.'}
   bj.d.forEach(function(c,i){dh.appendChild(cardEl(c,hideHole&&i===1))});
   $('bjPTot').textContent=bj.p.length?('= '+handVal(bj.p)):'';
   $('bjDTot').textContent=bj.d.length?(hideHole?'= ?':'= '+handVal(bj.d)):'';
@@ -1266,7 +1280,7 @@ var SHOP=[
   {id:'coil',nm:'Copper coiling kit',ds:'Batches cost less ($20) and run faster.',price:400},
   {id:'shoes',nm:'Quiet shoes',ds:'Cop detection radius −35%.',price:350},
   {id:'dice',nm:'Loaded dice (one night)',ds:'Next dice session leans hard toward seven.',price:250},
-  {id:'deck',nm:'Marked deck',ds:'See one dealer hole card… (coming soon)',price:300},
+  {id:'deck',nm:'Marked deck',ds:'See the dealer\'s hole card at blackjack.',price:300},
   {id:'contract',nm:'Union "consulting" contract',ds:'Casino laundry cap +200/day.',price:900},
   {id:'ledger',nm:'Friendly accountant',ds:'Rent growth slows to +35% per cycle.',price:1200}
 ];
@@ -1321,9 +1335,54 @@ function sellHooch(){
   var snitchChance=(0.30-(q*0.04))*(S.heat>50?1.5:1);
   if(Math.random()<snitchChance){
     S.heat=clamp(S.heat+9,0,100);
-    toast('That one looked nervous. Someone might talk.','bad');
+    var snitchLines=['That one looked nervous. Someone might talk.',
+      'They took the bottle… and a long look at your face.',
+      '"Nice doing business." They walked straight past a patrol car.'];
+    toast(snitchLines[ri(0,snitchLines.length-1)],'bad');
     alertNearestCop();
   }
+}
+
+/* ============================================================ MINIMAP + CHASE TINT */
+var miniCv=null;
+function miniInit(){
+  try{miniCv=$('mini').getContext('2d')}catch(e){miniCv=null}
+}
+function miniDraw(){
+  if(!miniCv||!player)return;
+  var g=miniCv,SCL=0.55,CX=75,CZ=75,RANGE=130;
+  g.clearRect(0,0,150,150);
+  g.fillStyle='rgba(10,10,16,.85)';g.fillRect(0,0,150,150);
+  function mx(wx){return CX+wx*SCL}
+  function mz(wz){return CZ+wz*SCL}
+  /* streets */
+  g.strokeStyle='rgba(255,255,255,.14)';g.lineWidth=3;
+  L.forEach(function(s){
+    g.beginPath();g.moveTo(mx(-126),mz(s));g.lineTo(mx(126),mz(s));g.stroke();
+    g.beginPath();g.moveTo(mx(s),mz(-126));g.lineTo(mx(s),mz(72));g.stroke();
+  });
+  /* landmarks */
+  g.fillStyle='#c9a2ff';g.fillRect(mx(STILL.x)-3,mz(STILL.z)-3,6,6);      /* still */
+  g.fillStyle='#ff5f9e';g.fillRect(mx(CLUB.x)-4,mz(CLUB.z)-4,8,8);        /* club */
+  g.fillStyle='#7ecbff';g.fillRect(mx(FERRIS.x)-3,mz(83.5)-3,6,6);        /* pier */
+  /* cops: red when chasing, amber otherwise */
+  cops.forEach(function(c){
+    g.fillStyle=(c.mode==='chase')?'#ff4444':'#ffca7a';
+    g.beginPath();g.arc(mx(c.mesh.position.x),mz(c.mesh.position.z),3,0,7);g.fill();
+  });
+  /* player */
+  g.save();
+  g.translate(mx(player.position.x),mz(player.position.z));
+  g.rotate(yaw);
+  g.fillStyle='#57d98a';
+  g.beginPath();g.moveTo(0,-6);g.lineTo(4.5,4.5);g.lineTo(-4.5,4.5);g.closePath();g.fill();
+  g.restore();
+}
+var tintEl=null,tintOn=false;
+function tintTick(){
+  if(!tintEl)tintEl=document.getElementById('tint');
+  var want=cops.some(function(c){return c.mode==='chase'})&&!S.ended;
+  if(want!==tintOn){tintOn=want;tintEl.style.opacity=want?'1':'0'}
 }
 
 /* ============================================================ INTERACTION SCAN */
@@ -1367,6 +1426,8 @@ function timeTick(dt){
   }
   // heat decays
   S.heat=clamp(S.heat-dt*0.12,0,100);
+  // high heat: reinforcements
+  if(S.heat>65&&cops.length<6&&Math.random()<dt*0.08)spawnPatrol();
   // pass out at 02:00
   if(S.min>=120&&prev<120){
     toast('2 AM. You crash in the alley. Morning comes.','info');
@@ -1568,6 +1629,8 @@ function start(fresh){
   player.position.set(S.pos[0],0,S.pos[1]);
   yaw=S.yaw;
   started=true;
+  miniInit();
+  var mc=$('mini');if(mc)mc.classList.remove('hidden');
   ac();
   if(fresh){
     toast('Welcome to the neighborhood. Find the glowing still east of the plaza.','info');
@@ -1610,6 +1673,8 @@ function loop(t){
   }
   updateCamera();
   skyTick();
+  miniDraw();
+  tintTick();
   updatePrompt();
   if(!panelOpen()&&(nowSec%0.5<dt))hudSync();
   renderer.render(scene,camera);
@@ -1619,6 +1684,7 @@ window.__MARKER={S:function(){return S},
   pos:function(){return player?{x:player.position.x,z:player.position.z}:null},
   near:function(){var it=nearestInteract();return it?it.label:null},
   pedNear:function(){return nearestPed(9999)||peds[0]},
+  cops:function(){return cops.length},
   bjSnap:function(){try{return{phase:bj.phase,bet:bj.bet,pcards:bj.p.length,dcards:bj.d.length,
     chips:S.chips,msg:document.getElementById('bjMsg').textContent}}catch(e){return {err:e.message}}},
   pedFreeze:function(){var p=nearestPed(9999);if(p){p.pause=1e9;p.mesh.position.set(base.__x||20.9,0,base.__z||-40)}return p?{x:p.mesh.position.x,z:p.mesh.position.z}:null}};

@@ -19,6 +19,7 @@ function makeEl(tag,id){
     removeChild(c){el.children=el.children.filter(x=>x!==c)},
     remove(){const p=el.parentNode;if(p)p.children=p.children.filter(x=>x!==el)},
     addEventListener(){},onclick:null};
+  el.getContext=()=>ctx2d;
   Object.defineProperty(el,'textContent',{
     get(){return el._text},
     set(v){el._text=String(v)}});
@@ -27,6 +28,8 @@ function makeEl(tag,id){
   return el;
 }
 const elems={},winListeners={};
+let rngQueue=null;                    /* deterministic Math.random when seeded */
+const realRandom=Math.random;
 const IDS=['boot','c','hud','vignette','fade','crosshair','prompt','toasts','objV','mobileWarn',
  'cashV','chipsV','hoochV','dayV','clockV','heatV','heatFill','repV','zoneV',
  'rentBox','rentLabel','rentAmtV','payRentBtn',
@@ -65,8 +68,13 @@ function flushTimers(span){
 }
 
 /* ---------------- canvas 2D stub ---------------- */
+let ctxOps=0;
 const ctx2d={fillStyle:'',font:'',textAlign:'',textBaseline:'',
-  fillRect(){},strokeRect(){},fillText(){},createRadialGradient:()=>({addColorStop(){}})};
+  fillRect(){ctxOps++},strokeRect(){ctxOps++},fillText(){ctxOps++},
+  beginPath(){},moveTo(){},lineTo(){},arc(){},fill(){},stroke(){},
+  closePath(){},
+  save(){},restore(){},translate(){},rotate(){},clearRect(){ctxOps++},
+  createRadialGradient:()=>({addColorStop(){}})};
 const canvasStub=()=>({width:64,height:64,getContext:()=>ctx2d});
 
 /* ---------------- THREE stub ---------------- */
@@ -138,6 +146,7 @@ const base={
   THREE,devicePixelRatio:1};
 base.window=base;base.globalThis=base;
 base.addEventListener=(t,f)=>{(winListeners[t]=winListeners[t]||[]).push(f)};
+base.Math=Math;                       /* shared with host so seeding works */
 let rafQ=[];
 base.requestAnimationFrame=f=>{rafQ.length=0;rafQ.push(f);return 1};
 
@@ -306,6 +315,33 @@ const dirtyAfter=parseInt(txt('cgCashV').replace(/[$,]/g,''));
 check('wash takes 25% vig',dirtyAfter===dirtyBefore-25,dirtyBefore+'->'+dirtyAfter);
 check('volume counter tracks',/\d+ \/ \d+/.test(txt('cgCapV')),txt('cgCapV'));
 key('escape');pump(2);
+
+/* ---- MARKED DECK (hole card reveal) ---- */
+relocate(607,-1.2,0);pressE();
+{ const d=saveState();d.upgrades=Object.assign({},d.upgrades,{deck:true});
+  d.chips=300;                                    /* fund the marked-deck hand */
+  storage[SAVE]=JSON.stringify(d);click('continueBtn');pump(3);pressE(); }
+click('bjBet50');click('bjDeal');
+check('marked deck exposes hole card',txt('bjMsg').indexOf('Marked deck:')===0,
+  txt('bjMsg'));
+key('escape');pump(2);
+if(base.__MARKER.bjSnap().phase==='player'){click('bjStand')}
+pump(400);                                       /* drain pending dealer timers */
+
+/* ---- HEAT PATROLS ---- */
+{ const d=saveState();d.heat=80;
+  storage[SAVE]=JSON.stringify(d);click('continueBtn');pump(3); }
+const copsBefore=base.__MARKER.cops();
+Math.random=()=>0.001;                /* force the reinforcement roll to fire */
+pump(600);                            /* ~10s of high-heat time */
+Math.random=realRandom;
+check('heat 65+ spawns patrols',base.__MARKER.cops()>copsBefore,
+  copsBefore+' -> '+base.__MARKER.cops());
+
+/* ---- MINIMAP renders ---- */
+ctxOps=0;miniPump();
+function miniPump(){pump(2)}
+check('minimap draws each frame',ctxOps>4,String(ctxOps)+' ops');
 
 /* ---- SHOP on pier ---- */
 relocate(4.5,105.2,0);pressE();
