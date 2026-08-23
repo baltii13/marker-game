@@ -1010,6 +1010,9 @@ function collectorUpdate(dt){
   if(!collectorActive()){collector.visible=false;return}
   collector.visible=!panelOpen();
   if(collector.visible===false)return;
+  var wx=player.position.x-collector.position.x,wz=player.position.z-collector.position.z;
+  var wd=Math.sqrt(wx*wx+wz*wz);
+  if(wd<18&&wd>1.2&&nowSec%3<0.05)sfx.bad();   /* dread drums as he closes in */
   var vx=player.position.x-collector.position.x,vz=player.position.z-collector.position.z;
   var dist=Math.sqrt(vx*vx+vz*vz);
   var sp=3.1*dt;
@@ -1148,6 +1151,8 @@ function objectiveText(){
   if(!S.brewedOnce)return 'Find the glowing still shack east of the plaza — press E to brew.';
   if(!S.soldOnce)return 'Offer hooch to pedestrians (walk up, press E). Watch for cop cones.';
   if(S.rentPending)return 'Rent is DUE: '+fmt(S.rentAmt)+'. Pay it tonight or lose everything.';
+  if(S.collector)return 'The collector is hunting you. Settle your '+fmt(S.debt)+' at the cage or run.';
+  if(S.debt>0)return 'Markers owed: '+fmt(S.debt)+'. Interest compounds nightly — settle at the cage.';
   if(!S.playedBJ)return 'Find the Lucky Nine club (west side). Sit at the blackjack table.';
   if(S.washed<200)return 'Launder '+fmt(200-S.washed)+' more through the club cage.';
   var nw=S.cash+S.chips;
@@ -1609,7 +1614,7 @@ function timeTick(dt){
   S.min+=dt*MIN_PER_SEC; /* dt(s) x game-minutes per real second */
   if(S.min>=1440){
     S.min-=1440;S.day++;
-    S.washed=0;S.cap=300+(S.upgrades.contract?200:0);
+    S.washed=0;S.cap=300+(S.upgrades.contract?200:0)+Math.round(S.rep*2);
     onMidnight();
   }
   // hourly bar sales
@@ -1624,7 +1629,7 @@ function timeTick(dt){
   if(S.min>=120&&prev<120){
     toast('2 AM. You crash in the alley. Morning comes.','info');
     S.min=8*60;S.day++;
-    S.washed=0;S.cap=300+(S.upgrades.contract?200:0);
+    S.washed=0;S.cap=300+(S.upgrades.contract?200:0)+Math.round(S.rep*2);
     onMidnight();
   }
 }
@@ -1692,7 +1697,7 @@ function bustPlayer(){
   teleport(PLAZA.x+4,PLAZA.z+10,-1.2,null);
   hudSync();save();
 }
-function netWorth(){return S.cash+S.chips}
+function netWorth(){return Math.max(0,S.cash+S.chips-S.debt)}
 function endGame(kind){
   if(S.ended)return;
   S.ended=kind;
