@@ -151,6 +151,7 @@ const THREE={
   SpriteMaterial:class{constructor(o){Object.assign(this,mat(o))}},
   MeshBasicMaterial:class{constructor(o){Object.assign(this,mat(o))}},
   MeshLambertMaterial:class{constructor(o){Object.assign(this,mat(o))}},
+  MeshPhongMaterial:class{constructor(o){Object.assign(this,mat(o))}},
   PointsMaterial:class{constructor(o){Object.assign(this,{opacity:1},o)}},
   HemisphereLight:class{constructor(){Object.assign(this,baseObj());this.intensity=1}},
   DirectionalLight:class{constructor(){Object.assign(this,baseObj());this.intensity=1;
