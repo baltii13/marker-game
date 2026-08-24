@@ -113,7 +113,8 @@ function mat(o){o=o||{};const out={opacity:o.opacity!==undefined?o.opacity:1,
   out.clone=function(){return mat(out)};
   return out}
 const THREE={
-  Vector3:V3,Color:Col,NearestFilter:1,
+  Vector3:V3,Color:Col,NearestFilter:1,LinearFilter:2,
+  Vector2:class{constructor(x,y){this.x=x||0;this.y=y||0}},
   Fog:class{constructor(c,n,f){this.color=new Col(c)}},
   Scene:class{constructor(){this.background=new Col();this.fog=new THREE.Fog(0,1,2);
     this.children=[]}
@@ -130,7 +131,8 @@ const THREE={
   Sprite:class{constructor(m){Object.assign(this,baseObj());this.material=m}},
   Points:class{constructor(g,m){Object.assign(this,baseObj());this.material=m}},
   BoxGeometry:class{},CylinderGeometry:class{},ConeGeometry:class{},
-  SphereGeometry:class{},TorusGeometry:class{},
+  SphereGeometry:class{},TorusGeometry:class{},LatheGeometry:class{},
+  OctahedronGeometry:class{},
   PlaneGeometry:class{constructor(){this.attributes={
     position:{count:100,getX:()=>0,getY:()=>0,getZ:()=>0,setX(){},setY(){},setZ(){},
       array:new Float32Array(300),needsUpdate:false}}}
@@ -141,6 +143,7 @@ const THREE={
   Shape:class{constructor(){this.commands=[]}
     moveTo(x,y){this.commands.push(['m',x,y]);return this}
     lineTo(x,y){this.commands.push(['l',x,y]);return this}
+    quadraticCurveTo(){this.commands.push(['q']);return this}
     closePath(){this.commands.push(['z']);return this}},
   ExtrudeGeometry:class{constructor(){this.attributes={
     position:{count:100,getX:()=>0,getY:()=>0,setZ(){},
@@ -472,14 +475,14 @@ check('HIGH quality restores (no crash)',true);
 check('renderFrame path active (no crash over frames)',deadFrames<20,String(deadFrames));
 
 /* ---- FIRST-PERSON default + V toggle ---- */
-check('first-person is the default view',base.__MARKER.fp()===true);
-check('body hidden in first-person',base.__MARKER.playerVisible()===false);
+check('third-person is the default view',base.__MARKER.fp()===false);
+check('body visible in third-person',base.__MARKER.playerVisible()===true);
 key('v');pump(2);key('v',false);pump(1);
-check('V flips to third-person (body visible)',
-  base.__MARKER.fp()===false&&base.__MARKER.playerVisible()===true,
+check('V flips to first-person (body hidden)',
+  base.__MARKER.fp()===true&&base.__MARKER.playerVisible()===false,
   'fp='+base.__MARKER.fp());
 key('v');pump(2);key('v',false);pump(1);
-check('V flips back to first-person',base.__MARKER.fp()===true);
+check('V flips back to third-person',base.__MARKER.fp()===false);
 
 /* ---- OBJECTIVE BEACON ---- */
 { const d=saveState();d.washed=300;d.playedBJ=true;d.hooch=0;
@@ -509,12 +512,13 @@ if(runnerHired){
 
 /* ---- HOOKED CUSTOMERS approach a seller ---- */
 { const d=saveState();d.hooch=3;d.min=12*60;
+  d.rival={active:false,goneUntilDay:0};          /* Vinnie test must not block buyers */
   storage[SAVE]=JSON.stringify(d);click('continueBtn');pump(3); }
 relocate(20,-40,-1.57);
 const hookPed=base.__MARKER.pedNear();
-hookPed.pause=1e9;hookPed.cool=0;
+hookPed.pause=1e9;hookPed.cool=0;               /* pinned; hook approach ignores pause */
 hookPed.mesh.position.set(24,0,-40);            /* within aggro radius */
-pump(320);                                      /* ~5s: interest builds + approach */
+pump(800);                                      /* ~13s: interest builds + approach */
 check('customer closed in on the player',
   Math.abs(hookPed.mesh.position.x-20)<3&&Math.abs(hookPed.mesh.position.z- -40)<3,
   JSON.stringify({x:hookPed.mesh.position.x.toFixed(1),z:hookPed.mesh.position.z.toFixed(1)}));
