@@ -487,6 +487,131 @@ function clubAudioTick(){
   }
 }
 
+/* ---------- MUSIC: procedural lo-fi synthwave loop (zero files) ---------- */
+var musicGain=null,musicNext=0,musicStep=0,musicOn=true,hatBuf=null;
+function musicInit(){
+  var a=ac();if(!a||musicGain)return;
+  musicGain=a.createGain();musicGain.gain.value=0.42;musicGain.connect(master);
+  /* pre-baked hat tick */
+  try{
+    var len=Math.floor(0.05*a.sampleRate);
+    hatBuf=a.createBuffer(1,len,a.sampleRate);
+    var d=hatBuf.getChannelData(0);
+    for(var i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2);
+  }catch(e){}
+}
+var CHORDS=[[220,261.63,329.63],[174.61,220,261.63],[130.81,164.81,196],[196,246.94,293.66]];
+function schedChord(fs,t,dur){
+  fs.forEach(function(f,i){
+    var o=AC.createOscillator(),g=AC.createGain();
+    o.type=i?'triangle':'sine';o.frequency.value=f;
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.linearRampToValueAtTime(0.05,t+0.4);
+    g.gain.setValueAtTime(0.05,t+dur-0.5);
+    g.gain.linearRampToValueAtTime(0.0001,t+dur);
+    o.connect(g);g.connect(musicGain);o.start(t);o.stop(t+dur+0.05);
+  });
+}
+function schedBass(f,t){
+  var o=AC.createOscillator(),g=AC.createGain();
+  o.type='sawtooth';o.frequency.value=f;
+  var flt=AC.createBiquadFilter();flt.type='lowpass';flt.frequency.value=320;
+  g.gain.setValueAtTime(0.0001,t);
+  g.gain.linearRampToValueAtTime(0.09,t+0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+0.34);
+  o.connect(flt);flt.connect(g);g.connect(musicGain);o.start(t);o.stop(t+0.4);
+}
+function schedKick(t){
+  var o=AC.createOscillator(),g=AC.createGain();
+  o.type='sine';
+  o.frequency.setValueAtTime(112,t);
+  o.frequency.exponentialRampToValueAtTime(38,t+0.11);
+  g.gain.setValueAtTime(0.22,t);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+0.16);
+  o.connect(g);g.connect(musicGain);o.start(t);o.stop(t+0.2);
+}
+function schedSnare(t){
+  if(!hatBuf)return;
+  var src=AC.createBufferSource();src.buffer=hatBuf;
+  var flt=AC.createBiquadFilter();flt.type='bandpass';flt.frequency.value=1900;flt.Q.value=0.8;
+  var g=AC.createGain();g.gain.value=0.11;
+  src.connect(flt);flt.connect(g);g.connect(musicGain);src.start(t);
+}
+function schedHat(t,vol){
+  if(!hatBuf)return;
+  var src=AC.createBufferSource();src.buffer=hatBuf;
+  var flt=AC.createBiquadFilter();flt.type='highpass';flt.frequency.value=6500;
+  var g=AC.createGain();g.gain.value=vol;
+  src.connect(flt);flt.connect(g);g.connect(musicGain);src.start(t);
+}
+function musicPump(){
+  if(!AC||!musicOn)return;
+  musicInit();
+  if(musicNext===0)musicNext=AC.currentTime+0.15;
+  if(musicNext>AC.currentTime+0.3)return;
+  var EIGHTH=60/76/2;                       /* 76 BPM, eighth-note grid */
+  while(musicNext<AC.currentTime+0.28){
+    var t=musicNext,s=musicStep%32,bar=(s/8)|0;
+    if(s%8===0)schedChord(CHORDS[bar],t,EIGHTH*8*0.98);
+    if(s%8===0||s%8===4)schedKick(t);
+    if(s%8===2||s%8===6)schedSnare(t);
+    schedHat(t,(s%2===1)?0.045:0.016);
+    if(s%8!==5)schedBass(CHORDS[bar][0]/2,t);
+    musicNext+=EIGHTH;musicStep++;
+  }
+}
+/* ---------- ENGINE + RAIN + FOOTSTEPS ---------- */
+var engineOsc=null,engineFlt=null,engineGain=null,rainSnd=null,lastStep=0;
+function startEngine(){
+  var a=ac();if(!a||engineOsc)return;
+  try{
+    engineOsc=a.createOscillator();engineOsc.type='sawtooth';engineOsc.frequency.value=48;
+    engineFlt=a.createBiquadFilter();engineFlt.type='lowpass';engineFlt.frequency.value=380;
+    engineGain=a.createGain();engineGain.gain.value=0.0001;
+    engineOsc.connect(engineFlt);engineFlt.connect(engineGain);engineGain.connect(master);
+    engineOsc.start();
+    engineGain.gain.setTargetAtTime(0.05,a.currentTime,0.25);
+  }catch(e){engineOsc=null}
+}
+function stopEngine(){
+  if(!engineOsc)return;
+  try{
+    engineGain.gain.setTargetAtTime(0.0001,AC.currentTime,0.2);
+    var eo=engineOsc;setTimeout(function(){try{eo.stop()}catch(e){}},700);
+  }catch(e){}
+  engineOsc=null;engineFlt=null;engineGain=null;
+}
+function engineUpdate(speed){
+  if(!engineOsc||!AC)return;
+  try{
+    engineOsc.frequency.setTargetAtTime(46+Math.abs(speed)*3.4,AC.currentTime,0.06);
+    engineGain.gain.setTargetAtTime(0.045+Math.abs(speed)*0.0022,AC.currentTime,0.1);
+  }catch(e){}
+}
+function rainUpdate(intensity){
+  var a=AC;if(!a)return;
+  try{
+    if(!rainSnd){
+      if(intensity<=0.02)return;
+      var len=2*a.sampleRate,buf=a.createBuffer(1,len,a.sampleRate),d=buf.getChannelData(0);
+      for(var i=0;i<len;i++)d[i]=Math.random()*2-1;
+      var src=a.createBufferSource();src.buffer=buf;src.loop=true;
+      var bp=a.createBiquadFilter();bp.type='bandpass';bp.frequency.value=2700;bp.Q.value=0.45;
+      var g=a.createGain();g.gain.value=0;
+      src.connect(bp);bp.connect(g);g.connect(master);src.start();
+      rainSnd={g:g,src:src};
+    }
+    rainSnd.g.gain.setTargetAtTime(intensity*0.13,a.currentTime,0.5);
+  }catch(e){rainSnd=null}
+}
+function footstep(sprint){
+  var now=performance.now()/1000;
+  if(now-lastStep<(sprint?0.31:0.44))return;
+  lastStep=now;
+  beep(rnd(72,88),0.05,'sine',0.10);
+}
+window.addEventListener('pointerdown',function(){ac();musicPump()},{once:true});
+
 /* ============================================================ three setup */
 if(!window.THREE){
   var be1=document.getElementById('bootErr');
@@ -1768,6 +1893,7 @@ function enterCar(){
   car.parked=false;
   player.visible=false;
   sfx.click();
+  startEngine();
   toast('Engine on. WASD to drive — S brakes/reverses.','info');
   hudSync();
 }
@@ -1778,6 +1904,7 @@ function exitCar(){
   player.visible=true;
   collideWorld(player.position,0.55);
   car.speed=0;car.ang=0;car.parked=true;car.mesh.userData.driving=false;
+  stopEngine();
   sfx.click();hudSync();save();
 }
 function carForward(){
@@ -3230,6 +3357,13 @@ function loop(t){
     collectorUpdate(dt);
     clubAudioTick();
     trafficTick(dt);
+    musicPump();                                   /* schedule upcoming beats */
+    if(car&&!car.parked)engineUpdate(car.speed);
+    rainUpdate(weather.intensity);
+    if(!car||car.parked){
+      var mv=keys['w']||keys['a']||keys['s']||keys['d'];
+      if(mv&&!panelOpen()&&(player.position.x<=400))footstep(keys['shift']);
+    }
     weatherTick(dt);
     harborTick(dt);
     smokeTick(dt);
