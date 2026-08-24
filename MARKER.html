@@ -17,8 +17,8 @@
 
   /* ---------- boot ---------- */
   #boot{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;
-    background:radial-gradient(ellipse at 50% 30%,#191420 0%,#07070a 70%)}
-  #bootCard{text-align:center;max-width:560px;padding:32px;border:1px solid var(--line);background:rgba(10,9,12,.7)}
+    background:radial-gradient(ellipse at 50% 30%,rgba(25,20,32,.42) 0%,rgba(7,7,10,.88) 70%)}
+  #bootCard{text-align:center;max-width:560px;padding:32px;border:1px solid var(--line);background:rgba(10,9,12,.78)}
   #bootTitle{font-size:56px;letter-spacing:.35em;color:var(--amber);text-shadow:0 0 24px rgba(255,179,71,.45)}
   #bootTag{margin-top:6px;color:var(--mut);letter-spacing:.12em;font-size:13px}
   #bootHelp{margin:22px 0;font-size:12px;line-height:1.9;color:var(--mut);border-top:1px solid rgba(255,255,255,.08);
@@ -30,6 +30,11 @@
   .bigbtn.ghost{background:transparent;color:var(--amber);border:1px solid var(--line)}
   .bigbtn.ghost:hover{background:rgba(255,179,71,.12)}
   #bootErr{color:var(--red);margin-top:14px;font-size:12px}
+  #bootOpts{margin-top:16px;display:flex;gap:6px;justify-content:center;align-items:center}
+  #bootOpts .olab{font-size:11px;letter-spacing:.2em;color:var(--mut);margin-right:4px}
+  .qbtn{font-family:inherit;font-size:11px;letter-spacing:.12em;padding:5px 12px;cursor:pointer;
+    background:transparent;color:var(--mut);border:1px solid var(--line)}
+  .qbtn.qsel{color:#0d0b08;background:var(--amber);border-color:var(--amber)}
 
   /* ---------- HUD ---------- */
   #hud{position:fixed;inset:0;z-index:10;pointer-events:none}
@@ -66,6 +71,13 @@
   #debtV{color:#ff7b7b}
   #tint{position:fixed;inset:0;z-index:6;pointer-events:none;opacity:0;
     transition:opacity .4s;box-shadow:inset 0 0 170px rgba(255,45,45,.6)}
+  /* film grain: animated noise overlay */
+  #grain{position:fixed;inset:-100px;z-index:7;pointer-events:none;opacity:.05;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    animation:grainShift .42s steps(4) infinite}
+  @keyframes grainShift{
+    0%{transform:translate(0,0)}25%{transform:translate(-38px,26px)}
+    50%{transform:translate(24px,-30px)}75%{transform:translate(-20px,-14px)}100%{transform:translate(0,0)}}
   .toast{background:rgba(10,9,12,.92);border-left:3px solid var(--amber);padding:8px 14px;font-size:13px;
     max-width:340px;animation:tIn .25s ease-out}
   .toast.bad{border-left-color:var(--red)} .toast.good{border-left-color:var(--green)} .toast.info{border-left-color:#7ecbff}
@@ -141,6 +153,12 @@
     </div>
     <button class="bigbtn" id="beginBtn" type="button">NEW GAME</button>
     <button class="bigbtn ghost hidden" id="continueBtn" type="button">CONTINUE</button>
+    <div id="bootOpts">
+      <span class="olab">QUALITY</span>
+      <button class="qbtn qsel" id="qHigh" type="button">HIGH</button>
+      <button class="qbtn" id="qMed" type="button">MED</button>
+      <button class="qbtn" id="qLow" type="button">LOW</button>
+    </div>
     <div id="bootErr"></div>
   </div>
 </div>
@@ -170,6 +188,7 @@
 
 <div id="vignette" class="hidden"></div>
 <div id="tint"></div>
+<div id="grain" class="hidden"></div>
 
 <!-- BLACKJACK -->
 <div id="bjPanel" class="panel hidden">
@@ -682,6 +701,19 @@ function makeBuilding(x,z,w,d,h){
       box.castShadow=true;scene.add(box);
     }
   }
+  if(Math.random()<0.22){                       /* rooftop neon sign */
+    var nm2=new THREE.MeshBasicMaterial({color:0xff2f8f});neonMats.push(nm2);
+    var word=['HOTEL','POOL','BAR','ROOMS','JAZZ','OPEN'][ri(0,5)];
+    var nb=new THREE.Mesh(new THREE.PlaneGeometry(4,1.1),
+      new THREE.MeshBasicMaterial({map:textTex(word,'#ffd9ec','#180a12',26)}));
+    nb.position.set(x,h+1.6,z+d/2+0.15);
+    scene.add(nb);
+    var nfr=new THREE.Mesh(new THREE.BoxGeometry(4.3,1.4,0.12),nm2);
+    nfr.position.set(x,h+1.6,z+d/2+0.08);
+    scene.add(nfr);
+    world.roofNeons=world.roofNeons||[];
+    world.roofNeons.push({mesh:nb,base:0.92});
+  }
   addCol(x,z,w+0.6,d+0.6);
 }
 /* small-town shop: colorful box + pitched roof + awning + hanging sign + chimney */
@@ -935,6 +967,54 @@ for(var bi=0;bi<L.length-1;bi++)for(var bj=0;bj<L.length-1;bj++){
     makeBuilding(cx,cz,w,d,h);
   }
 }
+/* ---------- street props: hydrants, crates, trash, bins ---------- */
+(function streetProps(){
+  var hyd=new THREE.MeshLambertMaterial({color:0xa8352c});
+  var crateM=new THREE.MeshLambertMaterial({color:0x6a5230});
+  var binM=new THREE.MeshLambertMaterial({color:0x2e3438});
+  var papM=new THREE.MeshLambertMaterial({color:0x8a8778});
+  function hydrant(x,z){
+    var h=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.2,0.62,7),hyd);
+    h.position.set(x,0.31,z);h.castShadow=true;scene.add(h);
+    var cap=new THREE.Mesh(new THREE.SphereGeometry(0.15,7,6),hyd);
+    cap.position.set(x,0.66,z);scene.add(cap);
+    addCol(x,z,0.4,0.4);
+  }
+  for(var k=0;k<10;k++)hydrant(L[ri(1,7)]+3,L[ri(0,7)]+rnd(-14,-11));
+  for(var c=0;c<14;c++){
+    var cx=L[ri(0,7)]+rnd(-13,13),cz=L[ri(1,7)]+rnd(-12,12);
+    var cr=new THREE.Mesh(new THREE.BoxGeometry(rnd(0.8,1.2),0.8,rnd(0.8,1.2)),crateM);
+    cr.position.set(cx,0.4,cz);cr.rotation.y=rnd(0,3);cr.castShadow=true;scene.add(cr);
+    if(Math.random()<0.5){
+      var cr2=new THREE.Mesh(cr.geometry,cr.material);
+      cr2.position.set(cx,1.18,cz);cr2.rotation.y=cr.rotation.y;cr2.castShadow=true;scene.add(cr2);
+    }
+  }
+  for(var b=0;b<9;b++){
+    var bx=L[ri(0,7)]+rnd(-14,14),bz=L[ri(1,7)]+rnd(-13,13);
+    var bin=new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.36,1.05,9),binM);
+    bin.position.set(bx,0.53,bz);bin.castShadow=true;scene.add(bin);
+  }
+  for(var pp=0;pp<26;pp++){                     /* scattered litter */
+    var px=rnd(-150,150),pz=rnd(-140,60);
+    var paper=new THREE.Mesh(new THREE.PlaneGeometry(0.32,0.4),papM);
+    paper.rotation.x=-Math.PI/2;paper.rotation.z=rnd(0,3);
+    paper.position.set(px,0.03,pz);scene.add(paper);
+  }
+  /* wet-asphalt sheen strips along the avenues (light up at night / rain) */
+  world.wets=[];
+  var wetMat=new THREE.MeshBasicMaterial({color:0x8fb4d8,transparent:true,opacity:0,
+    blending:THREE.AdditiveBlending,depthWrite:false});
+  L.forEach(function(s){
+    var strip=new THREE.Mesh(new THREE.PlaneGeometry(316,5.5),wetMat.clone());
+    strip.rotation.x=-Math.PI/2;strip.position.set(0,0.06,s);scene.add(strip);
+    world.wets.push(strip.material);
+    var strip2=new THREE.Mesh(new THREE.PlaneGeometry(5.5,220),wetMat.clone());
+    strip2.rotation.x=-Math.PI/2;strip2.position.set(s,0.06,-40);scene.add(strip2);
+    world.wets.push(strip2.material);
+  });
+})();
+
 /* ---------- plaza ---------- */
 function buildPlaza(cx,cz){
   var pav=new THREE.Mesh(new THREE.PlaneGeometry(30,30),new THREE.MeshLambertMaterial({color:0x1d1e26}));
@@ -1094,6 +1174,14 @@ function lamp(x,z,withLight){
   head.position.set(x,5,z);scene.add(head);
   lampHeads.push(head.material);
   var gl=glowSprite('rgba(255,190,90,.4)',6);gl.position.set(x,5,z);scene.add(gl);
+  /* volumetric-style light cone (additive, fades with height) */
+  var cone=new THREE.Mesh(new THREE.CylinderGeometry(0.34,2.6,4.6,14,1,true),
+    new THREE.MeshBasicMaterial({color:0xffc06a,transparent:true,opacity:0.05,
+      blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide,fog:false}));
+  cone.position.set(x,2.7,z);
+  cone.visible=false;
+  scene.add(cone);
+  world.cones=world.cones||[];world.cones.push(cone);
   if(withLight){
     var pl=new THREE.PointLight(0xffb35a,0,16);pl.position.set(x,4.6,z);scene.add(pl);lampLights.push(pl);
   }
@@ -1654,7 +1742,7 @@ function makePlayer(){
 var CAMDIST=7.8,CAMH=1.4;
 /* first-person by default; V toggles */
 var fp=true;
-var handBottle=null;
+var handBottle=null,bobT=0;
 function makeHandBottle(){
   var b=new THREE.Group();
   var body=new THREE.Mesh(new THREE.CylinderGeometry(0.075,0.09,0.34,7),
@@ -1739,6 +1827,7 @@ function collideBox(p,col,onHit){
   if(hit&&onHit)onHit();
 }
 function updateCamera(){
+  var dt=1/60;                                   /* camera effects tick */
   if(car&&!car.parked){
     /* driving: chase cam that lags the car heading */
     var cp=car.mesh.position,cr=car.mesh.rotation.y;
@@ -1758,7 +1847,10 @@ function updateCamera(){
   if(fp){
     /* first-person: eyes of the player, mouse-look drives the view */
     player.position.y=0;
-    camera.position.set(t.x,t.y+1.62,t.z);
+    var moving=(keys['w']||keys['a']||keys['s']||keys['d'])&&!panelOpen();
+    bobT=(bobT||0)+dt*(moving?(keys['shift']?13:9):2.5);
+    var bobY=moving?Math.sin(bobT*2)*0.045:Math.sin(bobT)*0.012;
+    camera.position.set(t.x,t.y+1.62+bobY,t.z);
     camera.rotation.order='YXZ';
     camera.rotation.set(-pitch*0.85,yaw,0);
     applyFpVis();
@@ -2369,6 +2461,41 @@ function onMidnight(){
   }
   hudSync();
 }
+/* ============================================================ QUALITY SETTINGS */
+var quality='high';
+function applyQuality(q){
+  quality=q;
+  var pr=Math.min(window.devicePixelRatio||1,2);
+  if(q==='high'){renderer.setPixelRatio(pr);sun.castShadow=true;
+    renderer.shadowMap.enabled=true;if(bloomPass)bloomPass.enabled=undefined;
+    world.neonOn=true;scene.fog.near=40;scene.fog.far=240;}
+  else if(q==='med'){
+    renderer.setPixelRatio(Math.min(pr,1));sun.castShadow=true;
+    renderer.shadowMap.enabled=true;
+    sun.shadow.mapSize.width=2048;sun.shadow.mapSize.height=2048;
+    world.neonOn=true;scene.fog.near=30;scene.fog.far=190;
+    if(bloomPass)bloomPass.enabled=true;}
+  else{
+    renderer.setPixelRatio(1);sun.castShadow=false;
+    renderer.shadowMap.enabled=false;
+    world.neonOn=false;scene.fog.near=24;scene.fog.far=150;
+    if(bloomPass)bloomPass.enabled=false;
+    if(composer&&composer.passes)composer.renderToScreen=true;}
+  ['qHigh','qMed','qLow'].forEach(function(id,i){
+    var b=$(id);if(!b)return;
+    var on=(i===0&&q==='high')||(i===1&&q==='med')||(i===2&&q==='low');
+    if(on){b.classList.add('qsel')}else{b.classList.remove('qsel')}
+  });
+}
+$('qHigh').onclick=function(){applyQuality('high')};
+$('qMed').onclick=function(){applyQuality('med')};
+$('qLow').onclick=function(){applyQuality('low')};
+try{if(localStorage.getItem('MARKER_Q'))applyQuality(localStorage.getItem('MARKER_Q'))}catch(e){}
+['qHigh','qMed','qLow'].forEach(function(id,q){
+  $(id).addEventListener&&$(id).addEventListener('click',function(){
+    try{localStorage.setItem('MARKER_Q',['high','med','low'][q])}catch(e){}
+  });
+});
 function barHour(){
   if(S.barStock<=0)return;
   var h=S.min/60;
@@ -2512,6 +2639,7 @@ window.addEventListener('resize',function(){
 });
 function renderFrame(){
   if(composer&&bloomPass){
+    if(bloomPass.enabled===false){renderer.render(scene,camera);return}
     /* perf guard: sustained slow frames drop bloom automatically */
     var now=performance.now();
     if(renderFrame._lt===undefined)renderFrame._lt=now;
@@ -2772,6 +2900,19 @@ function skyTick(){
     });
   }
   if(world.disco)world.disco.rotation.y=nowSec*2;
+  /* volumetric cones + rooftop neon flicker follow the night */
+  var coneOn=n>0.25&&weather.intensity<0.5&&quality!=='low';
+  if(world.cones)world.cones.forEach(function(c){
+    c.visible=coneOn;
+    c.material.opacity=coneOn?(0.032+n*0.035):0;
+  });
+  var wetA=(n*0.10+weather.intensity*0.09)*(quality==='low'?0:1);
+  if(world.wets)world.wets.forEach(function(wm){wm.opacity=wetA});
+  if(world.roofNeons)world.roofNeons.forEach(function(rn,i){
+    var flick=(Math.sin(nowSec*13+i*7)>-0.92)?1:0.25;   /* occasional stutter */
+    rn.mesh.material.opacity=world.neonOn===false?0:rn.base*flick;
+    rn.mesh.material.transparent=true;
+  });
   /* objective beacon follows the current goal */
   if(world.beacon){
     var bt=beaconTarget();
@@ -2802,6 +2943,7 @@ function start(fresh){
   canvas.classList.remove('hidden');
   $('hud').classList.remove('hidden');
   $('vignette').classList.remove('hidden');
+  $('grain').classList.remove('hidden');
   makePlayer();
   player.position.set(S.pos[0],0,S.pos[1]);
   yaw=S.yaw;
@@ -2849,7 +2991,16 @@ function loop(t){
   requestAnimationFrame(loop);
   var dt=Math.min(0.05,(t-lastT)/1000)||0.016;
   lastT=t;nowSec=t/1000;
-  if(!started)return;
+  /* live-city menu: world breathes behind the boot screen */
+  if(!started){
+    if(world.dome)world.dome.position.set(0,0,0);
+    peds.forEach(function(p){pedUpdate(p,dt,nowSec)});
+    trafficTick(dt);
+    harborTick(dt);
+    skyTick();
+    renderFrame();
+    return;
+  }
   if(!S.ended){
     movePlayer(dt);
     carTick(dt);

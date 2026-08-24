@@ -39,6 +39,7 @@ const IDS=['boot','c','hud','vignette','fade','crosshair','prompt','toasts','obj
  'rentBox','rentLabel','rentAmtV','payRentBtn',
  'bjPanel','dcPanel','bwPanel','cgPanel','shPanel','hpPanel',
  'bustedOv','bustedSub','endOv','endTitle','endSub','beginBtn','continueBtn','bootErr',
+ 'qHigh','qMed','qLow','grain','speedo',
  'bjChipsV','bjBetV','bjDHand','bjPHand','bjPTot','bjDTot','bjMsg',
  'dcChipsV','dcBetV','dcMsg','dcLog','bwMash','bwHooch','bwQ','bwInfo',
  'cgCashV','cgChipV','cgCapV','shCashV','shList',
@@ -456,6 +457,12 @@ relocate(-180,-494.8,0);                            /* grocery leave spot */
 pressE();pump(2);
 const outPos=base.__MARKER.pos();
 check('leave door returns to street',outPos.z>-400,JSON.stringify(outPos));
+
+/* ---- QUALITY settings + grain + live menu ---- */
+click('qLow');pump(2);
+check('LOW quality disables bloom path (no crash)',true);
+click('qHigh');pump(2);
+check('HIGH quality restores (no crash)',true);
 
 /* ---- GFX: engine hooks present (r147 API guarded) ---- */
 check('renderFrame path active (no crash over frames)',deadFrames<20,String(deadFrames));
