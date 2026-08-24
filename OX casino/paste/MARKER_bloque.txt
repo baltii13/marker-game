@@ -901,7 +901,9 @@ window.addEventListener('pointerdown',function(){ac();musicPump()},{once:true});
 var ASSETS={
   car:'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r147/examples/models/gltf/ferrari.glb',
   soldier:'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r147/examples/models/gltf/Soldier.glb',
-  flamingo:'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r147/examples/models/gltf/Flamingo.glb'
+  flamingo:'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r147/examples/models/gltf/Flamingo.glb',
+  /* tu PJ elegido con paste_character.py (swat, witch, punk, ...). */
+  playerChar:'assets/models/characters/current_player.glb'
 };
 var playerRig=null;   /* {root,mixer,actions:{idle,walk,run},current} */
 var npcClips=null;    /* shared Soldier animation clips for NPC rigs */
@@ -982,10 +984,47 @@ function rigUpdateFor(ent,dt,speed){
     });
   }catch(e){}
 }
+function pickClip(acts,names){
+  for(var k=0;k<names.length;k++){
+    for(var key in acts){
+      var kk=key.toLowerCase().replace(/^.*\|/,'');
+      if(kk===names[k].toLowerCase())return acts[key];
+    }
+  }
+  return null;
+}
+function buildRigFromModel(model,clips){
+  /* normaliza cualquier modelo: altura ~1.8u y clips por nombre */
+  model.traverse(function(o){if(o.isMesh)o.castShadow=true});
+  try{
+    var bb=new THREE.Box3().setFromObject(model);
+    var h=bb.max.y-bb.min.y;
+    if(h>0.01&&isFinite(h))model.scale.setScalar(1.85/h);
+  }catch(e){}
+  var mixer=new THREE.AnimationMixer(model);
+  var acts={};
+  (clips||[]).forEach(function(a){acts[a.name]=mixer.clipAction(a)});
+  var idle=pickClip(acts,['Idle','idle'])||acts[Object.keys(acts)[0]];
+  var walk=pickClip(acts,['Walk','walking','Run'])||idle;
+  var run=pickClip(acts,['Run','running','Sprint'])||walk;
+  if(idle)idle.play();
+  return {root:model,mixer:mixer,idle:idle,walk:walk,run:run,current:idle};
+}
 function loadRealAssets(){
   if(!THREE.GLTFLoader)return;
   try{
     var loader=new THREE.GLTFLoader();
+    /* --- TU PJ (paste_character.py) con fallback al Soldier --- */
+    loader.load(ASSETS.playerChar,function(gltf){
+      try{
+        var rig=buildRigFromModel(gltf.scene,gltf.animations);
+        rig.root.userData.dynamic=true;
+        scene.add(rig.root);
+        if(player)rig.root.position.copy(player.position);
+        playerRig=rig;
+        applyFpVis();
+      }catch(e){}
+    },undefined,function(){/* sin PJ local: cae al Soldier de abajo */});
     /* --- hero car --- */
     loader.load(ASSETS.car,function(gltf){
       try{
