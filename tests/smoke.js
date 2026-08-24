@@ -367,7 +367,16 @@ relocate(607,-1.2,0);pressE();
 { const d=saveState();d.upgrades=Object.assign({},d.upgrades,{deck:true});
   d.chips=300;                                    /* fund the marked-deck hand */
   storage[SAVE]=JSON.stringify(d);click('continueBtn');pump(3);pressE(); }
-click('bjBet50');click('bjDeal');
+click('bjBet50');
+{ /* deal until the round stays in player phase (dealer sometimes starts at 21) */
+  for(let tries=0;tries<6;tries++){
+    click('bjDeal');pump(4);
+    if(base.__MARKER.bjSnap().phase==='player')break;
+    pump(60);                                      /* let a finished hand settle */
+    if(base.__MARKER.bjSnap().phase!=='bet'){key('escape');pressE()}
+    if(base.__MARKER.bjSnap().phase!=='bet')break;
+  }
+}
 check('marked deck exposes hole card',txt('bjMsg').indexOf('Marked deck:')===0,
   txt('bjMsg'));
 key('escape');pump(2);

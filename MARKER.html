@@ -340,7 +340,9 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/shaders/FXAAShader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/environments/RoomEnvironment.js"></script>
-<script>window.THREE&&window.THREE.EffectComposer||document.write('<script src="https://unpkg.com/three@0.147.0/examples/js/postprocessing/EffectComposer.js"><\\/script><script src="https://unpkg.com/three@0.147.0/examples/js/postprocessing/RenderPass.js"><\\/script><script src="https://unpkg.com/three@0.147.0/examples/js/postprocessing/MaskPass.js"><\\/script><script src="https://unpkg.com/three@0.147.0/examples/js/postprocessing/ShaderPass.js"><\\/script><script src="https://unpkg.com/three@0.147.0/examples/js/shaders/FXAAShader.js"><\\/script><script src="https://unpkg.com/three@0.147.0/examples/js/postprocessing/UnrealBloomPass.js"><\\/script><script src="https://unpkg.com/three@0.147.0/examples/js/environments/RoomEnvironment.js"><\\/script>');</script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/utils/SkeletonUtils.js"></script>
+<script>window.THREE&&window.THREE.EffectComposer||document.write('<script src="https://unpkg.com/three@0.147.0/examples/js/postprocessing/EffectComposer.js"><\\/script><script src="https://unpkg.com/three@0.147.0/examples/js/postprocessing/RenderPass.js"><\\/script><script src="https://unpkg.com/three@0.147.0/examples/js/postprocessing/MaskPass.js"><\\/script><script src="https://unpkg.com/three@0.147.0/examples/js/postprocessing/ShaderPass.js"><\\/script><script src="https://unpkg.com/three@0.147.0/examples/js/shaders/FXAAShader.js"><\\/script><script src="https://unpkg.com/three@0.147.0/examples/js/postprocessing/UnrealBloomPass.js"><\\/script><script src="https://unpkg.com/three@0.147.0/examples/js/environments/RoomEnvironment.js"><\\/script><script src="https://unpkg.com/three@0.147.0/examples/js/loaders/GLTFLoader.js"><\\/script><script src="https://unpkg.com/three@0.147.0/examples/js/utils/SkeletonUtils.js"><\\/script>');</script>
 <script>
 (function(){
 'use strict';
@@ -611,6 +613,91 @@ function footstep(sprint){
   beep(rnd(72,88),0.05,'sine',0.10);
 }
 window.addEventListener('pointerdown',function(){ac();musicPump()},{once:true});
+
+/* ---------- REAL MODELS: GLB assets with graceful fallback ---------- */
+var ASSETS={
+  car:'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r147/examples/models/gltf/ferrari.glb',
+  soldier:'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r147/examples/models/gltf/Soldier.glb'
+};
+var playerRig=null;   /* {root,mixer,actions:{idle,walk,run},current} */
+function loadRealAssets(){
+  if(!THREE.GLTFLoader)return;
+  try{
+    var loader=new THREE.GLTFLoader();
+    /* --- hero car --- */
+    loader.load(ASSETS.car,function(gltf){
+      try{
+        var carModel=gltf.scene.children[0];
+        carModel.material=carModel.material||{};
+        var bodyMat=(carModel.material&&carModel.material.length!==undefined)?null:carModel.material;
+        if(bodyMat){
+          bodyMat.color=new THREE.Color(0x8a2318);
+          bodyMat.metalness=bodyMat.metalness!==undefined?0.9:undefined;
+          bodyMat.roughness=bodyMat.roughness!==undefined?0.32:undefined;
+        }
+        var wrap=new THREE.Group();
+        wrap.add(carModel);
+        wrap.scale.setScalar(1.15);
+        wrap.position.y=0.05;
+        wrap.userData.dynamic=true;
+        scene.add(wrap);
+        world.realCar={shell:wrap};
+        if(car){car.mesh.visible=false}         /* swap when it arrives mid-game */
+        world._pendingCarShow=false;
+      }catch(e){}
+    },undefined,function(){});
+    /* --- animated soldier as the player character --- */
+    loader.load(ASSETS.soldier,function(gltf){
+      try{
+        var model=gltf.scene;
+        model.traverse(function(o){if(o.isMesh)o.castShadow=true});
+        var clone=THREE.SkeletonUtils.clone?THREE.SkeletonUtils.clone(model):model;
+        var mixer=new THREE.AnimationMixer(clone);
+        var actions={};
+        gltf.animations.forEach(function(a){
+          actions[a.name]=mixer.clipAction(a);
+        });
+        var idle=actions['Idle']||Object.values(actions)[0];
+        var walk=actions['Walk']||actions['Running']||idle;
+        var run=actions['Running']||walk;
+        if(idle)idle.play();
+        clone.scale.setScalar(1.35);            /* soldier is ~1.7m tall */
+        clone.userData.dynamic=true;
+        scene.add(clone);
+        if(player)clone.position.copy(player.position);
+        playerRig={root:clone,mixer:mixer,idle:idle,walk:walk,run:run,current:idle,
+          lastYaw:null};
+      }catch(e){}
+    },undefined,function(){});
+  }catch(e){}
+}
+function playerRigUpdate(dt,moving,sprint){
+  if(!playerRig||!player)return;
+  try{
+    playerRig.root.position.set(player.position.x,0,player.position.z);
+    if(moving){
+      var target=Math.atan2(-Math.sin(yaw),-Math.cos(yaw));
+      var r=playerRig.root.rotation;
+      var d=target-r.y;
+      while(d>Math.PI)d-=Math.PI*2;while(d<-Math.PI)d+=Math.PI*2;
+      r.y+=d*Math.min(1,dt*10);
+      var want=sprint?(playerRig.run||playerRig.walk):(playerRig.walk||playerRig.idle);
+      if(want&&playerRig.current!==want){
+        if(playerRig.current)playerRig.current.fadeOut(0.18);
+        want.reset().fadeIn(0.18).play();
+        playerRig.current=want;
+      }
+    }else{
+      var idl=playerRig.idle;
+      if(idl&&playerRig.current!==idl){
+        if(playerRig.current)playerRig.current.fadeOut(0.22);
+        idl.reset().fadeIn(0.22).play();
+        playerRig.current=idl;
+      }
+    }
+    playerRig.mixer.update(dt);
+  }catch(e){}
+}
 
 /* ============================================================ three setup */
 if(!window.THREE){
@@ -3297,6 +3384,7 @@ function start(fresh){
   });
   buildShopInteriors();                        /* built once; triggers persist */
   if(!_frozenOnce){_frozenOnce=true;freezeStatics()}
+  loadRealAssets();
   if(!vinnie)makeVinnie();
   if(!collector)makeCollector();
   startAmbience();
@@ -3372,6 +3460,7 @@ function loop(t){
     if(saveAcc>5){saveAcc=0;save()}
   }
   updateCamera();
+  playerRigUpdate(dt,!car||car.parked?((keys['w']||keys['a']||keys['s']||keys['d'])&&!panelOpen()):false,keys['shift']);
   skyTick();
   miniDraw();
   tintTick();
