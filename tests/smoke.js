@@ -132,8 +132,9 @@ const THREE={
   BoxGeometry:class{},CylinderGeometry:class{},ConeGeometry:class{},
   SphereGeometry:class{},TorusGeometry:class{},
   PlaneGeometry:class{constructor(){this.attributes={
-    position:{count:100,getX:()=>0,getY:()=>0,setZ(){},
-      array:new Float32Array(300),needsUpdate:false}}}},
+    position:{count:100,getX:()=>0,getY:()=>0,getZ:()=>0,setX(){},setY(){},setZ(){},
+      array:new Float32Array(300),needsUpdate:false}}}
+    computeVertexNormals(){}},
   BufferGeometry:class{constructor(){this.attributes={}}
     setAttribute(n,a){this.attributes[n]=a;return this}
     setFromPoints(){return this}},
@@ -157,7 +158,10 @@ const THREE={
   HemisphereLight:class{constructor(){Object.assign(this,baseObj());this.intensity=1}},
   DirectionalLight:class{constructor(){Object.assign(this,baseObj());this.intensity=1;
     this.castShadow=false;this.shadow={mapSize:{},camera:{}}}},
-  PointLight:class{constructor(){Object.assign(this,baseObj());this.intensity=1}}};
+  PointLight:class{constructor(){Object.assign(this,baseObj());this.intensity=1}},
+  SpotLight:class{constructor(){Object.assign(this,baseObj());this.intensity=1;
+    this.target=new (function(){this.position=new V3()})()}},
+  Object3D:class{constructor(){Object.assign(this,baseObj())}}};
 
 /* ---------------- sandbox ---------------- */
 const storage={};

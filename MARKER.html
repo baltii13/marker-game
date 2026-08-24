@@ -494,7 +494,7 @@ if(!window.THREE){
 }
 var canvas=$('c'),renderer,scene,camera;
 try{
-  renderer=new THREE.WebGLRenderer({canvas:canvas,antialias:true});
+  renderer=new THREE.WebGLRenderer({canvas:canvas,antialias:true,powerPreference:'high-performance'});
   renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
   renderer.shadowMap.enabled=true;
   renderer.shadowMap.type=THREE.PCFSoftShadowMap;
@@ -611,8 +611,25 @@ function addCol(x,z,w,d){colliders.push({x0:x-w/2,x1:x+w/2,z0:z-d/2,z1:z+d/2})}
 var world={},lampLights=[],lampHeads=[],neonMats=[];
 
 /* ---------- ground / roads / water ---------- */
-var ground=new THREE.Mesh(new THREE.PlaneGeometry(480,480),
+/* ---------- terrain: a closed valley like Schedule 1's basin ---------- */
+/* height field shared by the mesh AND every placement that must sit on it */
+function terrainH(x,z){
+  var d=Math.sqrt(x*x+(z+20)*(z+20));
+  var t=clamp((d-95)/115,0,1);
+  var s=t*t*(3-2*t);                       /* smoothstep */
+  return -11*s;
+}
+var ground=new THREE.Mesh(new THREE.PlaneGeometry(500,500,56,56),
   new THREE.MeshLambertMaterial({color:0x15161c}));
+(function shapeValley(){
+  var pos=ground.geometry.attributes.position;
+  for(var i=0;i<pos.count;i++){
+    var vx=pos.getX(i),vz=pos.getY(i);      /* plane local XY -> world XZ */
+    pos.setZ(i,terrainH(vx,vz-20));
+  }
+  pos.needsUpdate=true;
+  ground.geometry.computeVertexNormals();
+})();
 ground.rotation.x=-Math.PI/2;ground.position.z=-20;scene.add(ground);
 (function(){
   /* asphalt with speckle + cracks, hi-res and anisotropic */
@@ -1195,13 +1212,20 @@ function lamp(x,z,withLight){
 /* ---------- skyline & sky ---------- */
 (function skyline(){
   var m=new THREE.MeshLambertMaterial({color:0x121019});
-  for(var k=0;k<26;k++){
-    var a=k/26*Math.PI*2,r=rnd(190,240);
+  /* ring of tall blocks rising out of the valley walls = closed horizon */
+  for(var k=0;k<34;k++){
+    var a=k/34*Math.PI*2,r=rnd(185,225);
     var x=Math.cos(a)*r,z=Math.sin(a)*r-20;
     if(z>75)continue;
-    var h=rnd(20,60);
+    var h=rnd(26,72)+terrainH(x,z)*-1.6;    /* taller on the raised rim */
     var b=new THREE.Mesh(new THREE.BoxGeometry(rnd(14,30),h,rnd(14,30)),m);
-    b.position.set(x,h/2,z);scene.add(b);
+    b.position.set(x,h/2+terrainH(x,z),z);scene.add(b);
+    if(Math.random()<0.6){                  /* red aircraft beacon */
+      var bc=new THREE.Mesh(new THREE.SphereGeometry(0.5,6,6),
+        new THREE.MeshBasicMaterial({color:0xff3b30,transparent:true,opacity:0.85}));
+      bc.position.set(x,h+terrainH(x,z)+0.8,z);scene.add(bc);
+      world.beacons=world.beacons||[];world.beacons.push(bc.material);
+    }
   }
   var starGeo=new THREE.BufferGeometry(),pts=[];
   for(var s=0;s<420;s++){
@@ -1557,7 +1581,7 @@ function alertNearestCop(){
 }
 
 /* ---------------- PLAYER CAR: buy it, drive it, park it, save it ---------------- */
-var car=null,carCol={x0:-1.6,x1:1.6,z0:-3.2,z1:3.2};
+var car=null,carCol={x0:-1.6,x1:1.6,z0:-3.2,z1:3.2},carBeams=[];
 function makePlayerCar(x,z,ry){
   var g=new THREE.Group();
   var body=new THREE.Mesh(new THREE.BoxGeometry(2.15,0.62,4.7),
@@ -1583,6 +1607,15 @@ function makePlayerCar(x,z,ry){
     var lamp=new THREE.Mesh(new THREE.SphereGeometry(0.14,6,6),hl);
     lamp.position.set(s[0],0.66,2.36);g.add(lamp);
   });
+  /* real headlight beams for night driving */
+  var beams=[];
+  [[-0.7],[0.7]].forEach(function(s){
+    var beam=new THREE.SpotLight(0xffe2a8,0,42,0.5,0.55,1.4);
+    beam.position.set(s[0],0.8,2.3);
+    var tgt=new THREE.Object3D();tgt.position.set(s[0],0,18);
+    g.add(tgt);beam.target=tgt;g.add(beam);beams.push(beam);
+  });
+  carBeams=beams;
   var tl=new THREE.MeshBasicMaterial({color:0xff4444});
   [[-0.7],[0.7]].forEach(function(s){
     var lampT=new THREE.Mesh(new THREE.SphereGeometry(0.11,6,6),tl);
@@ -1735,6 +1768,7 @@ var lastCrime=-999,nowSec=0,started=false;
 function makePlayer(){
   if(player)scene.remove(player);
   player=pedMesh(0xb3772a);
+  player.userData.dynamic=true;              /* never matrix-freeze living things */
   scene.add(player);
 }
 
@@ -2461,7 +2495,19 @@ function onMidnight(){
   }
   hudSync();
 }
-/* ============================================================ QUALITY SETTINGS */
+/* ---------- PERF: freeze static meshes (skips per-frame matrix math) ---------- */
+function freezeStatics(){
+  var n=0;
+  for(var i=0;i<scene.children.length;i++){
+    var o=scene.children[i];
+    if(o.userData&&o.userData.dynamic)continue;
+    if(o.isMesh||o.isPoints){o.matrixAutoUpdate=false;o.updateMatrix();n++}
+  }
+  return n;
+}
+var _frozenOnce=false;
+
+/* ---------- QUALITY SETTINGS */
 var quality='high';
 function applyQuality(q){
   quality=q;
@@ -2756,14 +2802,18 @@ function weatherTick(dt){
   w.intensity+=((w.rain?1:0)-w.intensity)*dt*0.7;
   var on=w.intensity>0.05;
   w.pts.visible=on;if(!on)return;
+  /* only the rain near the camera updates its fall — big CPU save in storms */
   w.mat.opacity=0.55*w.intensity;
   var attr=w.geo.attributes&&w.geo.attributes.position;
   var arr=attr?attr.array:null;
   if(!arr)return;
+  var px=player?player.position.x:0,pz=player?player.position.z:0;
   for(var i=0;i<arr.length;i+=3){
-    arr[i+1]-=(w.vel?w.vel[i/3]:22)*dt;
-    if(arr[i+1]<0){arr[i]=player.position.x+rnd(-70,70);
-      arr[i+1]=38;arr[i+2]=player.position.z+rnd(-60,80);}
+    var dxr=arr[i]-px,dzr=arr[i+2]-pz;
+    if(dxr*dxr+dzr*dzr>3600)continue;       /* 60-unit radius of interest */
+    arr[i+1]-=(w.vel?w.vel[i/3]:22)*dt*1.6;
+    if(arr[i+1]<0){arr[i]=px+rnd(-70,70);
+      arr[i+1]=38;arr[i+2]=pz+rnd(-60,80);}
   }
   w.geo.attributes.position.needsUpdate=true;
   /* lightning */
@@ -2913,6 +2963,11 @@ function skyTick(){
     rn.mesh.material.opacity=world.neonOn===false?0:rn.base*flick;
     rn.mesh.material.transparent=true;
   });
+  if(world.beacons)world.beacons.forEach(function(bm,i){
+    bm.opacity=(Math.sin(nowSec*1.4+i)>0)?0.9:0.15;     /* aircraft beacons blink */
+  });
+  var carBeamOn=nightAmount()>0.35&&quality!=='low'&&car&&!car.parked;
+  carBeams.forEach(function(bm){bm.intensity=carBeamOn?1.6:0});
   /* objective beacon follows the current goal */
   if(world.beacon){
     var bt=beaconTarget();
@@ -2952,6 +3007,7 @@ function start(fresh){
     if(!sh._built){makeStorefront(sh);sh._built=true}
   });
   buildShopInteriors();                        /* built once; triggers persist */
+  if(!_frozenOnce){_frozenOnce=true;freezeStatics()}
   if(!vinnie)makeVinnie();
   if(!collector)makeCollector();
   startAmbience();
