@@ -1033,6 +1033,16 @@ function loadRealAssets(){
         });
       }catch(e){}
     },undefined,function(){});
+    /* --- Baltasar's house model: skins the low-rise lots (local file) --- */
+    loader.load(HOUSE_URL,function(gltf){
+      try{
+        houseLib=gltf.scene;
+        houseLib.traverse(function(o){if(o.isMesh){o.castShadow=true;o.receiveShadow=true}});
+        houseQueue.splice(0).forEach(function(job){
+          mountHouse(job[0],job[1],job[2],job[3]);
+        });
+      }catch(e){}
+    },undefined,function(){});
   }catch(e){}
 }
 function playerRigUpdate(dt,moving,sprint){
@@ -1593,6 +1603,26 @@ function spAct(itm){
 var SKIP=[[PLAZA.x,PLAZA.z],[PARK.x,PARK.z],[CLUB.x,CLUB.z],[POLICE.x,POLICE.z],[ALLEY.x,ALLEY.z],[-26,-12]];
 var clubDoorPos={x:CLUB.x+13.2,z:CLUB.frontZ};
 var intDoorPos={x:INT.intDoorX,z:INT.z+11};
+
+/* ---------- YOUR HOUSE MODEL: Quaternius GLB (CC0) as the low-rise skin ----------
+   The asset lives next to this file (assets/models/houses/). While it loads,
+   the code-built shop/building stands in; when ready, each low-rise lot grows
+   a real modeled house (scaled to its footprint) on top of the plot. */
+var HOUSE_URL='assets/models/houses/house_quaternius_01.glb';
+var houseLib=null;
+var houseQueue=[];    /* [x,z,w,d] lots waiting for the house model */
+function mountHouse(x,z,w,d){
+  if(!houseLib||!THREE.SkeletonUtils&&true)return;
+  try{
+    var h=houseLib.clone(true);
+    /* footprint of the raw model is ~2.6 x 3.9 units -> scale to the lot */
+    h.scale.set(w/2.6,d/3.9,(w+d)/2/3.2);
+    h.position.set(x,0.24,z);
+    h.rotation.y=(Math.random()<0.5?0:Math.PI)+rnd(-0.06,0.06);
+    h.traverse(function(o){if(o.isMesh){o.castShadow=true;o.receiveShadow=true}});
+    scene.add(h);
+  }catch(e){}
+}
 function nearSkip(cx,cz){
   for(var k=0;k<SKIP.length;k++){
     var dx=cx-SKIP[k][0],dz=cz-SKIP[k][1];
@@ -1610,6 +1640,7 @@ for(var bi=0;bi<L.length-1;bi++)for(var bj=0;bj<L.length-1;bj++){
   if(distC<95&&Math.random()<0.55){
     /* downtown core: low colorful shops, Schedule-1 main-street feel */
     makeShop(cx,cz,w,d,rnd(5,9));
+    if(distC<70)houseQueue.push([cx,cz-2,w*0.9,d*0.9]);   /* house skins on the core lots */
   }else{
     var h=(distC<110)?rnd(10,22):rnd(8,18);
     makeBuilding(cx,cz,w,d,h);
