@@ -118,7 +118,8 @@ const THREE={
     this.children=[]}
     add(o){this.children.push(o)}
     remove(o){this.children=this.children.filter(x=>x!==o)}},
-  PerspectiveCamera:class{constructor(){this.position=new V3();this.aspect=1}
+  PerspectiveCamera:class{constructor(){this.position=new V3();this.aspect=1;
+    this.rotation=new V3()}
     lookAt(){}updateProjectionMatrix(){}},
   WebGLRenderer:class{constructor(){this.domElement=canvasStub();this.shadowMap={}}
     setPixelRatio(){}setSize(){}render(){}},
@@ -264,10 +265,12 @@ pressE();
 check('still panel opens via E',vis('bwPanel'));
 click('bwStart');
 check('mash starts',txt('bwMash').indexOf('mashing')>=0,txt('bwMash'));
-pump(2800);                        /* 44.8s: mash 20s + distill 22s + margin */
+pump(1700);                        /* ~27s: mash 12s + distill 13s + margin */
 check('batch done (panel live-updates)',txt('bwInfo').indexOf('ready')>=0,txt('bwInfo'));
+const hoochBefore=saveState().hooch;
 click('bwCollect');
-check('hooch collected',txt('hoochV').startsWith('1'),txt('hoochV'));
+{ const got=saveState().hooch-hoochBefore;
+  check('batch collected 2-5 bottles',got>=2&&got<=5,String(got)+' bottles'); }
 check('quality recorded',/Q\d/.test(txt('bwQ')),txt('bwQ'));
 key('escape');pump(2);
 check('ESC closes panel',!vis('bwPanel'));
@@ -282,9 +285,12 @@ ped.mesh.position.set(20.9,0,-40);   /* re-pin after any frame movement */
 pump(1);
 check('sell prompt appears',elems.prompt.innerHTML.indexOf('Offer hooch')>=0,
   elems.prompt.innerHTML);
+const preSell=saveState();
 pressE();
 const st1=saveState();
-check('sold bottle: cash up & bottle gone',st1.hooch===0,st1.cash+' / '+st1.hooch);
+check('sold bottle: cash up & one bottle gone',
+  st1.hooch===preSell.hooch-1&&st1.cash>preSell.cash,
+  st1.cash+' / '+st1.hooch);
 check('rep went up',st1.rep>0,String(st1.rep));
 
 /* ---- CLUB: cage first ---- */
@@ -452,6 +458,55 @@ check('leave door returns to street',outPos.z>-400,JSON.stringify(outPos));
 
 /* ---- GFX: engine hooks present (r147 API guarded) ---- */
 check('renderFrame path active (no crash over frames)',deadFrames<20,String(deadFrames));
+
+/* ---- FIRST-PERSON default + V toggle ---- */
+check('first-person is the default view',base.__MARKER.fp()===true);
+check('body hidden in first-person',base.__MARKER.playerVisible()===false);
+key('v');pump(2);key('v',false);pump(1);
+check('V flips to third-person (body visible)',
+  base.__MARKER.fp()===false&&base.__MARKER.playerVisible()===true,
+  'fp='+base.__MARKER.fp());
+key('v');pump(2);key('v',false);pump(1);
+check('V flips back to first-person',base.__MARKER.fp()===true);
+
+/* ---- OBJECTIVE BEACON ---- */
+{ const d=saveState();d.washed=300;d.playedBJ=true;d.hooch=0;
+  storage[SAVE]=JSON.stringify(d);click('continueBtn');pump(3); }
+relocate(20,-40,-1.57);                           /* outdoors, out of goals, dry */
+pump(3);
+check('beacon guides back to the still when dry',base.__MARKER.beaconOn()===true);
+{ const d=saveState();d.hooch=2;
+  storage[SAVE]=JSON.stringify(d);click('continueBtn');pump(3);
+  check('beacon hides when it is time to go sell',base.__MARKER.beaconOn()===false); }
+
+/* ---- RUNNER: hire at cage, hourly passive sales ---- */
+{ const d=saveState();d.cash=500;d.runner=false;d.hooch=4;d.min=10*60+55;
+  storage[SAVE]=JSON.stringify(d);click('continueBtn');pump(3); }
+relocate(589.6,6.4,-1.57);pressE();
+check('runner button lives in the cage panel',!elems.cgRunner.disabled||saveState().runner);
+click('cgRunner');pump(2);
+const runnerHired=saveState().runner;
+check('runner hired for $250',runnerHired===true,'cash '+saveState().cash);
+click('cgClose');pump(2);
+if(runnerHired){
+  const h0=saveState().hooch;
+  pump(400);                                    /* ~6.5s: crosses an hour boundary */
+  const h1=saveState().hooch;
+  check('runner moved bottles over the hour tick',h1<h0,h0+' -> '+h1);
+}
+
+/* ---- HOOKED CUSTOMERS approach a seller ---- */
+{ const d=saveState();d.hooch=3;d.min=12*60;
+  storage[SAVE]=JSON.stringify(d);click('continueBtn');pump(3); }
+relocate(20,-40,-1.57);
+const hookPed=base.__MARKER.pedNear();
+hookPed.pause=1e9;hookPed.cool=0;
+hookPed.mesh.position.set(24,0,-40);            /* within aggro radius */
+pump(320);                                      /* ~5s: interest builds + approach */
+check('customer closed in on the player',
+  Math.abs(hookPed.mesh.position.x-20)<3&&Math.abs(hookPed.mesh.position.z- -40)<3,
+  JSON.stringify({x:hookPed.mesh.position.x.toFixed(1),z:hookPed.mesh.position.z.toFixed(1)}));
+
 /* ---- MARKERS: sign, owe, default twice, collector visits ---- */
 relocate(589.6,6.4,-1.57);pressE();
 const debt0=saveState().debt;

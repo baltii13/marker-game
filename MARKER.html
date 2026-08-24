@@ -254,6 +254,7 @@
     <button class="btn danger" id="cgMarker200" type="button">SIGN $200 MARKER (+$200 chips, owe $260)</button>
     <button class="btn primary" id="cgSettle" type="button">SETTLE MARKERS</button>
   </div>
+  <div class="row"><button class="btn primary" id="cgRunner" type="button">HIRE A RUNNER — $250 (sells a bottle or two every hour)</button></div>
 </div>
 
 <!-- RIVAL -->
@@ -339,6 +340,7 @@ var S={
   upgrades:{coil:false,shoes:false,dice:false,deck:false,contract:false,ledger:false},
   diceLeft:0,
   washed:0, cap:300,
+  runner:false, runnerHour:0,
   debt:0, defaults:0, collector:false,
   rival:{active:false,goneUntilDay:0},
   soldOnce:false, brewedOnce:false, playedBJ:false,
@@ -355,6 +357,7 @@ function save(){
       rentPending:S.rentPending,rentAmt:S.rentAmt,rentDueDay:S.rentDueDay,
       brew:S.brew,brewT:S.brewT,lastQ:S.lastQ,barStock:S.barStock,upgrades:S.upgrades,
       washed:S.washed,cap:S.cap,diceLeft:S.diceLeft,soldOnce:S.soldOnce,brewedOnce:S.brewedOnce,playedBJ:S.playedBJ,
+      runner:(S.runner||false),
       debt:S.debt,defaults:S.defaults,collector:S.collector,rival:S.rival,
       pos:p,yaw:round2(yaw),
       car:(car&&!car.parked)?null:{x:round2(car.mesh.position.x),z:round2(car.mesh.position.z),ry:round2(car.mesh.rotation.y)}}));
@@ -371,6 +374,7 @@ function loadSave(){
     if(d.debt!==undefined)S.debt=d.debt;
     if(d.defaults!==undefined)S.defaults=d.defaults;
     if(d.collector!==undefined)S.collector=d.collector;
+    if(d.runner!==undefined)S.runner=d.runner;
     if(d.rival)S.rival=d.rival;
     if(d.upgrades)S.upgrades=d.upgrades;
     if(d.pos)S.pos=d.pos;
@@ -1220,6 +1224,32 @@ function pedNextNode(pd){
 }
 function pedUpdate(pd,dt,time){
   if(pd.cool>0)pd.cool-=dt;
+  /* interested customers break off their route and close in on a seller */
+  var hooked=false;
+  if(S.hooch>0&&!rivalActive()&&player.position.x<=400&&pd.cool<=0){
+    var ddx=player.position.x-pd.mesh.position.x,
+        ddz=player.position.z-pd.mesh.position.z;
+    var dd=Math.sqrt(ddx*ddx+ddz*ddz);
+    if(dd<26){
+      hooked=true;
+      pd.hook=Math.min(1,(pd.hook||0)+dt*0.22);
+      if(pd.hook>=1&&dd>2.1){
+        var sp2=2.9*dt;
+        pd.mesh.position.x+=ddx/dd*sp2;
+        pd.mesh.position.z+=ddz/dd*sp2;
+        pd.mesh.rotation.y=Math.atan2(ddx,ddz);
+        animLimbs(pd.mesh,7,time+pd.bob,0.55);
+        pd.mesh.position.y=Math.abs(Math.sin(time*7+pd.bob))*0.05;
+      }
+    }else pd.hook=0;
+  }else pd.hook=0;
+  if(hooked){
+    if(!pd.tag){
+      pd.tag=glowSprite('rgba(255,214,120,0.95)',1.0);
+      pd.tag.position.y=2.2;pd.mesh.add(pd.tag);
+    }
+    pd.tag.visible=pd.hook>=1;
+  }else if(pd.tag)pd.tag.visible=false;
   if(pd.pause>0){pd.pause-=dt;pd.mesh.position.y=Math.abs(Math.sin(time*2+pd.bob))*0.03;return}
   var fx=L[pd.node[0]],fz=L[pd.node[1]],tx=L[pd.target[0]],tz=L[pd.target[1]];
   var dx=tx-fx,dz=tz-fz,len=Math.abs(dx)+Math.abs(dz);
@@ -1553,6 +1583,27 @@ function makePlayer(){
 
 /* ============================================================ movement & collision */
 var CAMDIST=7.8,CAMH=1.4;
+/* first-person by default; V toggles */
+var fp=true;
+var handBottle=null;
+function makeHandBottle(){
+  var b=new THREE.Group();
+  var body=new THREE.Mesh(new THREE.CylinderGeometry(0.075,0.09,0.34,7),
+    new THREE.MeshLambertMaterial({color:0x3a5a2a}));
+  b.add(body);
+  var neck=new THREE.Mesh(new THREE.CylinderGeometry(0.032,0.05,0.12,6),
+    new THREE.MeshLambertMaterial({color:0x3a5a2a}));
+  neck.position.y=0.22;b.add(neck);
+  b.position.set(0.32,-0.28,-0.55);
+  b.rotation.z=-0.18;
+  camera.add(b);
+  handBottle=b;
+}
+function applyFpVis(){
+  if(!player)return;
+  player.visible=!fp;
+  if(handBottle)handBottle.visible=fp&&S.hooch>0&&(!car||car.parked);
+}
 function movePlayer(dt){
   if(!player||S.ended)return;
   if(car&&!car.parked)return;                 /* driving: the car handles motion */
@@ -1631,9 +1682,20 @@ function updateCamera(){
     yaw=Math.atan2(-(camera.position.x-cp.x),-(camera.position.z-cp.z));
     pitch=clamp(pitch,-0.1,0.5);
     camera.lookAt(cp.x,cp.y+1.35,cp.z);
+    if(handBottle)handBottle.visible=false;
     return;
   }
   var t=player.position;
+  if(fp){
+    /* first-person: eyes of the player, mouse-look drives the view */
+    player.position.y=0;
+    camera.position.set(t.x,t.y+1.62,t.z);
+    camera.rotation.order='YXZ';
+    camera.rotation.set(-pitch*0.85,yaw,0);
+    applyFpVis();
+    return;
+  }
+  applyFpVis();
   var off=new THREE.Vector3(Math.sin(yaw)*Math.cos(pitch),Math.sin(pitch)+0.25,Math.cos(yaw)*Math.cos(pitch));
   camera.position.set(t.x+off.x*CAMDIST,Math.max(1.1,t.y+off.y*CAMDIST+CAMH),t.z+off.z*CAMDIST);
   camera.lookAt(t.x,t.y+1.7,t.z);
@@ -1734,6 +1796,7 @@ function hudSync(){
     $('payRentBtn').style.display='none';
   }else{rb.classList.add('hidden')}
   $('objV').textContent=objectiveText();
+  if(started&&player&&handBottle)applyFpVis();
   var sp=$('speedo');
   if(sp){
     if(car&&!car.parked){sp.classList.remove('hidden');
@@ -1792,7 +1855,7 @@ function bwTick(dt){
   if(S.brew==='mash'||S.brew==='distill'){
     S.brewT-=dt*(S.upgrades.coil?1.35:1);
     if(S.brewT<=0){
-      if(S.brew==='mash'){S.brew='distill';S.brewT=22;sfx.bubble()}
+      if(S.brew==='mash'){S.brew='distill';S.brewT=13;sfx.bubble()}
       else{S.brew='done';S.batchQ=ri(1,5)+(Math.random()<0.25?1:0);
         if(S.upgrades.bubbles){S.batchQ=clamp(S.batchQ+1,1,6);S.upgrades.bubbles=false}
         S.batchQ=clamp(S.batchQ,1,6)}
@@ -1804,15 +1867,17 @@ function bwTick(dt){
 function bwStart(){
   if(S.brew!=='idle')return;
   if(S.cash<batchCost()){toast('Not enough cash for sugar.','bad');return}
-  S.cash-=batchCost();S.brew='mash';S.brewT=20;
+  S.cash-=batchCost();S.brew='mash';S.brewT=12;
   sfx.click();toast('Mash started. Come back in a bit.','info');
   bwRender();hudSync();
 }
 function bwCollect(){
   if(S.brew!=='done')return;
-  if(S.hooch>=6){toast('You can only carry 6 bottles.','bad');return}
-  S.hooch++;S.lastQ=S.batchQ||3;S.brew='idle';S.brewedOnce=true;
-  sfx.cash();toast('Collected hooch — quality Q'+S.lastQ+'.','good');
+  var n=2+ri(0,3);                              /* 2-5 bottles per batch */
+  n=Math.min(n,6-S.hooch);
+  if(n<=0){toast('Pockets full — sell or stock the bar first.','bad');return}
+  S.hooch+=n;S.lastQ=S.batchQ||3;S.brew='idle';S.brewedOnce=true;
+  sfx.cash();toast('Collected '+n+' bottles — quality Q'+S.lastQ+'.','good');
   bwRender();hudSync();save();
 }
 
@@ -1977,6 +2042,13 @@ function cgSell(){
   sfx.cash();toast('Chips cashed out — spotless money.','good');
   cgRender();hudSync();save();
 }
+function cgRunnerHire(){
+  if(S.runner){toast('Your runner is already working the streets.','info');return}
+  if(S.cash<250){toast('The runner wants $250 up front.','bad');return}
+  S.cash-=250;S.runner=true;
+  sfx.cash();toast('Runner hired. Bottles sell themselves while you roam.','good');
+  cgRender();hudSync();save();
+}
 
 /* ---------------- MARKERS: sign now, regret later ---------------- */
 function cgMarker(){
@@ -2068,11 +2140,16 @@ function sellHooch(){
   var pd=nearestPed(3);
   if(!pd){toast('Nobody close enough to pitch.','bad');return}
   if(S.hooch<=0){toast("You're out of hooch.",'bad');return}
-  var q=S.lastQ||3,price=sellPrice(q);
+  var q=S.lastQ||3;
+  var hookedIn=pd.hook>=1;                       /* they walked to YOU */
+  var base=sellPrice(q);
+  var price=Math.round(base*(hookedIn?1.15:1));  /* eager buyers pay +15% */
   if(rivalActive()){price=Math.round(price*0.75)}
   S.hooch--;S.cash+=price;S.rep=Math.min(99,S.rep+1);
-  S.soldOnce=true;lastCrime=nowSec;pd.cool=45;
-  sfx.cash();toast('Sold a bottle for '+fmt(price)+'.',"good");
+  S.soldOnce=true;lastCrime=nowSec;pd.cool=45;pd.hook=0;
+  sfx.cash();
+  toast(hookedIn?('Eager buyer paid '+fmt(price)+' for a bottle.')
+                :('Sold a bottle for '+fmt(price)+'.'),"good");
   hudSync();save();
   var snitchChance=(0.30-(q*0.04))*(S.heat>50?1.5:1)*(S.upgrades.suit?0.6:1);
   if(Math.random()<snitchChance){
@@ -2179,6 +2256,16 @@ function timeTick(dt){
   // hourly bar sales
   if(Math.floor(prev/60)!==Math.floor(S.min/60)){
     barHour();
+    if(S.runner){                                  /* the runner works the corners */
+      var n=Math.min(S.hooch,1+ri(0,1));
+      var earn=0;
+      for(var rr=0;rr<n;rr++)earn+=sellPrice(S.lastQ||3);
+      if(n>0){
+        S.hooch-=n;S.cash+=earn;
+        toast('Runner moved '+n+' bottle'+(n>1?'s':'')+' for '+fmt(earn)+'.','info');
+        hudSync();
+      }
+    }
   }
   // heat decays
   S.heat=clamp(S.heat-dt*0.12,0,100);
@@ -2301,6 +2388,10 @@ window.addEventListener('keydown',function(e){
     if(nearestPed(3.2)){sellHooch()}
   }
   if(k==='m'&&!panelOpen()){toggleMute()}
+  if(k==='v'&&!panelOpen()){
+    fp=!fp;applyFpVis();
+    toast(fp?'First-person. Press V for third.':'Third-person. Press V for first.','info');
+  }
 });
 window.addEventListener('keyup',function(e){keys[e.key.toLowerCase()]=false});
 canvas.addEventListener('click',function(){
@@ -2332,6 +2423,13 @@ try{
 }catch(e){composer=null}
 function renderFrame(){
   if(composer&&bloomPass){
+    /* perf guard: sustained slow frames drop bloom automatically */
+    var now=performance.now();
+    if(renderFrame._lt===undefined)renderFrame._lt=now;
+    var fd=now-renderFrame._lt;renderFrame._lt=now;
+    if(fd>34)renderFrame._slow=(renderFrame._slow||0)+1;
+    else if(renderFrame._slow>0)renderFrame._slow--;
+    if(renderFrame._slow>90&&bloomPass.enabled!==false){bloomPass.enabled=false}
     bloomPass.strength=lerp(0.28,0.95,nightAmount());
     composer.render();
   }else renderer.render(scene,camera);
@@ -2369,6 +2467,7 @@ $('cgBuy100').onclick=cgBuy;
 $('cgSellAll').onclick=cgSell;
 $('cgMarker200').onclick=cgMarker;
 $('cgSettle').onclick=cgSettle;
+$('cgRunner').onclick=cgRunnerHire;
 $('rvClose').onclick=function(){closePanels()};
 $('rvSilence').onclick=function(){if(S.cash>=150){S.cash-=150;rivalGone(1,"Vinnie takes the envelope. 'Pleasure doing business.' He's gone tomorrow.")}};
 $('rvCops').onclick=function(){if(S.cash>=100){S.cash-=100;S.heat=clamp(S.heat+12,0,100);rivalGone(3,"Anonymous tip filed. Vinnie's cooling his heels downtown for three days.")}};
@@ -2390,6 +2489,26 @@ $('payRentBtn').onclick=payRent;
     new THREE.MeshBasicMaterial({map:tex,side:THREE.BackSide,fog:false}));
   scene.add(dome);world.dome=dome;
 })();
+
+/* ---------- OBJECTIVE BEACON: a pillar of light over your next move ---------- */
+(function(){
+  var b=new THREE.Mesh(new THREE.CylinderGeometry(1.3,1.3,90,10,1,true),
+    new THREE.MeshBasicMaterial({color:0xffe08a,transparent:true,opacity:0.14,
+      depthWrite:false,side:THREE.DoubleSide}));
+  b.visible=false;scene.add(b);
+  var ring=new THREE.Mesh(new THREE.TorusGeometry(2.6,0.18,8,24),
+    new THREE.MeshBasicMaterial({color:0xffe08a,transparent:true,opacity:0.55,depthWrite:false}));
+  ring.rotation.x=Math.PI/2;ring.position.y=-44.7;b.add(ring);
+  world.beacon=b;
+})();
+function beaconTarget(){
+  if(S.collector)return null;                    /* survival beats guidance */
+  if(!S.brewedOnce)return {x:STILL.x+3,z:STILL.z+1};
+  if(!S.playedBJ)return {x:clubDoorPos.x,z:clubDoorPos.z};
+  if(S.washed<200)return {x:INT.x-11,z:INT.z+7};
+  if(S.hooch<=0)return {x:STILL.x+3,z:STILL.z+1}; /* keep the still fed */
+  return null;                                   /* go sell — buyers find you */
+}
 
 /* ---------- WEATHER: rain system with lightning ---------- */
 var weather={rain:false,intensity:0,boltT:rnd(20,40),boltLight:null};
@@ -2563,7 +2682,19 @@ function skyTick(){
       t.material.color.setHSL((nowSec*0.15+i*0.11)%1,0.75,0.55);
     });
   }
-  if(world.disco){world.disco.rotation.y=nowSec*2}
+  if(world.disco)world.disco.rotation.y=nowSec*2;
+  /* objective beacon follows the current goal */
+  if(world.beacon){
+    var bt=beaconTarget();
+    if(bt&&player&&player.position.x<=400){
+      world.beacon.visible=true;
+      var pulse=0.10+Math.sin(nowSec*2.2)*0.05;
+      world.beacon.material.opacity=pulse;
+      world.beacon.position.set(bt.x,45,bt.z);
+      var bdx=bt.x-player.position.x,bdz=bt.z-player.position.z;
+      world.beacon.visible=(bdx*bdx+bdz*bdz)>64;   /* hide once you're basically there */
+    }else world.beacon.visible=false;
+  }
   if(world.dancers)world.dancers.forEach(function(d,i){
     animLimbs(d,8,nowSec+i*0.4,0.9);
     d.rotation.y=Math.sin(nowSec*0.7+i)*0.6;
@@ -2611,6 +2742,7 @@ $('endBtn').onclick=function(){
   S.cash=150;S.chips=0;S.hooch=0;S.day=1;S.min=8*60;S.heat=0;S.rep=0;
   S.rentPending=false;S.rentAmt=350;S.rentDueDay=4;
   S.brew='idle';S.brewT=0;S.lastQ=0;S.barStock=0;S.washed=0;S.cap=300;S.diceLeft=0;
+  S.runner=false;S.runnerHour=0;
   S.upgrades={coil:false,shoes:false,dice:false,deck:false,contract:false,ledger:false,
     engine:false,suit:false,scanner:false,pawn:false,bubbles:false};
   S.soldOnce=false;S.brewedOnce=false;S.playedBJ=false;
@@ -2659,6 +2791,9 @@ function loop(t){
 window.__MARKER={S:function(){return S},
   pos:function(){return player?{x:player.position.x,z:player.position.z}:null},
   near:function(){var it=nearestInteract();return it?it.label:null},
+  fp:function(){return !!fp},
+  playerVisible:function(){return !!(player&&player.visible)},
+  beaconOn:function(){return !!(world.beacon&&world.beacon.visible)},
   pedNear:function(){return nearestPed(9999)||peds[0]},
   cops:function(){return cops.length},
   vinniePos:function(){return vinnie&&vinnie.visible?{x:vinnie.position.x,z:vinnie.position.z}:null},
