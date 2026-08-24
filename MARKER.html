@@ -640,7 +640,7 @@ function skinSoldier(srcModel,hex){
   }catch(e){}
 }
 function makeNPCFromSoldier(mesh,coatHex){
-  /* replace a code-built ped/cop with an animated Soldier clone */
+  /* REPLACE the code-built ped/cop with an animated Soldier clone */
   if(!soldierLib)return false;
   try{
     var clone=THREE.SkeletonUtils.clone?THREE.SkeletonUtils.clone(soldierLib):soldierLib.clone(true);
@@ -654,8 +654,21 @@ function makeNPCFromSoldier(mesh,coatHex){
     clone.position.copy(mesh.position);
     clone.rotation.copy(mesh.rotation);
     clone.userData.dynamic=true;
-    mesh.parent.add(clone);
-    mesh.visible=false;
+    /* keep gameplay-only bits (cop vision cone) alive: re-parent them to the
+       scene and drive them from the rig each frame */
+    if(mesh.userData.keepOnSwap){
+      var extras=[];
+      mesh.traverse(function(o){if(o!==mesh&&o.userData&&o.userData.keepOnSwap)extras.push(o)});
+      extras.forEach(function(o){
+        o.removeFromParent?o.removeFromParent():mesh.remove(o);
+        o.userData.followEnt={mesh:mesh};
+        scene.add(o);
+        mesh.userData.extras=mesh.userData.extras||[];
+        mesh.userData.extras.push(o);
+      });
+    }
+    mesh.parent.add(clone);                     /* same parent -> same transforms */
+    mesh.visible=false;                         /* placeholder fully hidden */
     mesh.userData.rig={root:clone,mixer:mixer,idle:idle,walk:walk,run:run,current:idle};
     return true;
   }catch(e){return false}
@@ -674,6 +687,16 @@ function rigUpdateFor(ent,dt,speed){
     r.root.position.set(ent.mesh.position.x,ent.mesh.position.y,ent.mesh.position.z);
     r.root.rotation.y=ent.mesh.rotation.y;
     r.mixer.update(dt);
+    /* gameplay extras (cop vision cone) ride along with the rig */
+    var ex=ent.mesh.userData.extras;
+    if(ex)ex.forEach(function(o){
+      var fe=o.userData.followEnt;
+      if(fe){
+        o.position.set(fe.mesh.position.x,fe.mesh.position.y,fe.mesh.position.z);
+        o.rotation.y=fe.mesh.rotation.y;
+        o.visible=fe.mesh.visible!==false||o.userData.alwaysShow;
+      }
+    });
   }catch(e){}
 }
 function loadRealAssets(){
@@ -756,7 +779,7 @@ function loadRealAssets(){
         houseLib=gltf.scene;
         houseLib.traverse(function(o){if(o.isMesh){o.castShadow=true;o.receiveShadow=true}});
         houseQueue.splice(0).forEach(function(job){
-          mountHouse(job[0],job[1],job[2],job[3]);
+          mountHouse(job[0],job[1],job[2],job[3],job[4]);
         });
       }catch(e){}
     },undefined,function(){});
@@ -1118,6 +1141,14 @@ function makeShop(x,z,w,d,h){
     new THREE.MeshLambertMaterial({color:0x6a5040}));
   chim.position.set(x+w/4,h+roofH*0.5,z-d/4);chim.castShadow=true;scene.add(chim);
   addCol(x,z,w+0.6,d+0.6);
+  /* everything visual hangs off one group so the house GLB can replace it */
+  var shell=new THREE.Group();
+  [body,roof,awn,stripe,sign,chim].forEach(function(o){
+    if(o&&o.parent)o.parent.remove(o);
+    shell.add(o);
+  });
+  scene.add(shell);
+  return shell;
 }
 /* ---------- ENTERABLE SHOPS: five doors that open into real interiors ---------- */
 var SHOPS=[
@@ -1328,8 +1359,8 @@ var intDoorPos={x:INT.intDoorX,z:INT.z+11};
 var HOUSE_URL='assets/models/houses/house_quaternius_01.glb';
 var houseLib=null;
 var houseQueue=[];    /* [x,z,w,d] lots waiting for the house model */
-function mountHouse(x,z,w,d){
-  if(!houseLib||!THREE.SkeletonUtils&&true)return;
+function mountHouse(x,z,w,d,base){
+  if(!houseLib)return;
   try{
     var h=houseLib.clone(true);
     /* footprint of the raw model is ~2.6 x 3.9 units -> scale to the lot */
@@ -1338,6 +1369,7 @@ function mountHouse(x,z,w,d){
     h.rotation.y=(Math.random()<0.5?0:Math.PI)+rnd(-0.06,0.06);
     h.traverse(function(o){if(o.isMesh){o.castShadow=true;o.receiveShadow=true}});
     scene.add(h);
+    if(base)base.visible=false;               /* REPLACE: hide the code building */
   }catch(e){}
 }
 function nearSkip(cx,cz){
@@ -1356,8 +1388,8 @@ for(var bi=0;bi<L.length-1;bi++)for(var bj=0;bj<L.length-1;bj++){
   var distC=Math.sqrt(cx*cx+(cz+40)*(cz+40));
   if(distC<95&&Math.random()<0.55){
     /* downtown core: low colorful shops, Schedule-1 main-street feel */
-    makeShop(cx,cz,w,d,rnd(5,9));
-    if(distC<70)houseQueue.push([cx,cz-2,w*0.9,d*0.9]);   /* house skins on the core lots */
+    var shopBody=makeShop(cx,cz,w,d,rnd(5,9));
+    if(distC<70)houseQueue.push([cx,cz-2,w*0.9,d*0.9,shopBody]);   /* house REPLACES the shop box */
   }else{
     var h=(distC<110)?rnd(10,22):rnd(8,18);
     makeBuilding(cx,cz,w,d,h);
@@ -1880,6 +1912,7 @@ function makeCop(ix,iz){
   var cone=new THREE.Mesh(coneGeo,coneMat);
   cone.rotation.x=-Math.PI/2;
   cone.position.z=CONE_LEN/2+0.4;
+  cone.userData.keepOnSwap=true;               /* survive the Soldier swap */
   g.add(cone);
   scene.add(g);
   cops.push({mesh:g,cone:cone,coneMat:coneMat,node:[ix,iz],target:[ix,iz],t:0,pause:rnd(0,2),
@@ -2280,7 +2313,11 @@ function makeHandBottle(){
 }
 function applyFpVis(){
   if(!player)return;
-  player.visible=!fp;
+  /* when the real Soldier rig exists it IS the body: hide the code capsule
+     in BOTH views so they never overlap; FP only hides the rig */
+  var rigAlive=!!(playerRig&&playerRig.root);
+  player.visible=!fp&&!rigAlive;
+  if(playerRig&&playerRig.root)playerRig.root.visible=!fp;
   if(handBottle)handBottle.visible=fp&&S.hooch>0&&(!car||car.parked);
 }
 function movePlayer(dt){
@@ -3580,6 +3617,11 @@ function loop(t){
     bwTick(dt);
     peds.forEach(function(p){pedUpdate(p,dt,nowSec)});
     cops.forEach(function(c){copUpdate(c,dt,nowSec)});
+  /* vision cones re-parented after the Soldier swap follow their cop */
+  cops.forEach(function(c){
+    var ex=c.mesh.userData.extras;
+    if(ex)ex.forEach(function(o){if(o===c.cone)o.visible=c.cone.visible});
+  });
     vinnieUpdate(dt);
     collectorUpdate(dt);
     clubAudioTick();

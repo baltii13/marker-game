@@ -368,13 +368,17 @@ relocate(607,-1.2,0);pressE();
   d.chips=300;                                    /* fund the marked-deck hand */
   storage[SAVE]=JSON.stringify(d);click('continueBtn');pump(3);pressE(); }
 click('bjBet50');
-{ /* deal until the round stays in player phase (dealer sometimes starts at 21) */
-  for(let tries=0;tries<6;tries++){
+{ /* deal until a hand actually reaches the player phase (blackjacks
+     auto-settle and never show the marked-deck line) */
+  for(let tries=0;tries<8;tries++){
     click('bjDeal');pump(4);
-    if(base.__MARKER.bjSnap().phase==='player')break;
-    pump(60);                                      /* let a finished hand settle */
-    if(base.__MARKER.bjSnap().phase!=='bet'){key('escape');pressE()}
-    if(base.__MARKER.bjSnap().phase!=='bet')break;
+    if(txt('bjMsg').indexOf('Marked deck:')===0)break;
+    const snap=base.__MARKER.bjSnap();
+    if(snap.phase==='player'){click('bjStand')}
+    pump(80);                                      /* let the hand finish */
+    if(base.__MARKER.bjSnap().phase!=='bet'){
+      key('escape');pump(2);pressE();pump(2);click('bjBet50');
+    }
   }
 }
 check('marked deck exposes hole card',txt('bjMsg').indexOf('Marked deck:')===0,
@@ -526,6 +530,7 @@ if(runnerHired){
 
 /* ---- HOOKED CUSTOMERS approach a seller ---- */
 { const d=saveState();d.hooch=3;d.min=12*60;
+  d.lastCrime=-999;d.heat=0;                      /* no recent crime: buyers bite */
   d.rival={active:false,goneUntilDay:0};          /* Vinnie test must not block buyers */
   storage[SAVE]=JSON.stringify(d);click('continueBtn');pump(3); }
 relocate(20,-40,-1.57);
