@@ -642,8 +642,9 @@ function loadRealAssets(){
         wrap.userData.dynamic=true;
         scene.add(wrap);
         world.realCar={shell:wrap};
+        /* keep the GLB glued to the logical car every frame */
+        wrap.userData.followCar=true;
         if(car){car.mesh.visible=false}         /* swap when it arrives mid-game */
-        world._pendingCarShow=false;
       }catch(e){}
     },undefined,function(){});
     /* --- animated soldier as the player character --- */
@@ -2805,6 +2806,7 @@ function timeTick(dt){
   if(S.min>=1440){
     S.min-=1440;S.day++;
     S.washed=0;S.cap=300+(S.upgrades.contract?200:0)+Math.round(S.rep*2);
+    S.crateDay=0;                                  /* alley crate restocks nightly */
     onMidnight();
   }
   // hourly bar sales
@@ -3344,6 +3346,12 @@ function skyTick(){
   });
   var carBeamOn=nightAmount()>0.35&&quality!=='low'&&car&&!car.parked;
   carBeams.forEach(function(bm){bm.intensity=carBeamOn?1.6:0});
+  /* GLB car shell follows the logical car body (position + heading) */
+  if(world.realCar&&world.realCar.shell&&world.realCar.shell.userData.followCar&&car){
+    world.realCar.shell.visible=!car.mesh.visible;
+    world.realCar.shell.position.set(car.mesh.position.x,0,car.mesh.position.z);
+    world.realCar.shell.rotation.y=car.mesh.rotation.y;
+  }
   /* objective beacon follows the current goal */
   if(world.beacon){
     var bt=beaconTarget();
@@ -3406,6 +3414,7 @@ $('endBtn').onclick=function(){
   S.cash=150;S.chips=0;S.hooch=0;S.day=1;S.min=8*60;S.heat=0;S.rep=0;
   S.rentPending=false;S.rentAmt=350;S.rentDueDay=4;
   S.brew='idle';S.brewT=0;S.lastQ=0;S.barStock=0;S.washed=0;S.cap=300;S.diceLeft=0;
+  S.crateDay=0;
   S.runner=false;S.runnerHour=0;
   S.upgrades={coil:false,shoes:false,dice:false,deck:false,contract:false,ledger:false,
     engine:false,suit:false,scanner:false,pawn:false,bubbles:false};
