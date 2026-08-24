@@ -617,9 +617,65 @@ window.addEventListener('pointerdown',function(){ac();musicPump()},{once:true});
 /* ---------- REAL MODELS: GLB assets with graceful fallback ---------- */
 var ASSETS={
   car:'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r147/examples/models/gltf/ferrari.glb',
-  soldier:'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r147/examples/models/gltf/Soldier.glb'
+  soldier:'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r147/examples/models/gltf/Soldier.glb',
+  flamingo:'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r147/examples/models/gltf/Flamingo.glb'
 };
 var playerRig=null;   /* {root,mixer,actions:{idle,walk,run},current} */
+var npcClips=null;    /* shared Soldier animation clips for NPC rigs */
+var soldierLib=null;  /* cached source scene for cloning NPCs */
+var npcQueue=[];      /* ped/cop meshes waiting to become soldiers */
+var gullLib=null,gullQueue=[];
+
+function skinSoldier(srcModel,hex){
+  /* recolor the soldier's clothing so NPCs are not clones in uniform */
+  try{
+    var c=new THREE.Color(hex);
+    srcModel.traverse(function(o){
+      if(o.isMesh&&o.material){
+        if(o.material.name==='vanguard_Main'||/body|torso|jacket/i.test(o.material.name||'')){
+          var m=o.material.clone();m.color=c;o.material=m;
+        }
+      }
+    });
+  }catch(e){}
+}
+function makeNPCFromSoldier(mesh,coatHex){
+  /* replace a code-built ped/cop with an animated Soldier clone */
+  if(!soldierLib)return false;
+  try{
+    var clone=THREE.SkeletonUtils.clone?THREE.SkeletonUtils.clone(soldierLib):soldierLib.clone(true);
+    skinSoldier(clone,coatHex||0x555555);
+    clone.scale.setScalar(1.35);
+    var mixer=new THREE.AnimationMixer(clone);
+    var acts={};
+    (npcClips||[]).forEach(function(a){acts[a.name]=mixer.clipAction(a)});
+    var idle=acts['Idle'],walk=acts['Walk'],run=acts['Running'];
+    if(idle)idle.play();
+    clone.position.copy(mesh.position);
+    clone.rotation.copy(mesh.rotation);
+    clone.userData.dynamic=true;
+    mesh.parent.add(clone);
+    mesh.visible=false;
+    mesh.userData.rig={root:clone,mixer:mixer,idle:idle,walk:walk,run:run,current:idle};
+    return true;
+  }catch(e){return false}
+}
+function rigUpdateFor(ent,dt,speed){
+  var r=ent.mesh.userData.rig;if(!r)return;
+  try{
+    var want=r.idle;
+    if(speed>4.5)want=r.run||r.walk;
+    else if(speed>0.2)want=r.walk||r.idle;
+    if(want&&r.current!==want){
+      if(r.current)r.current.fadeOut(0.15);
+      want.reset().fadeIn(0.15).play();
+      r.current=want;
+    }
+    r.root.position.set(ent.mesh.position.x,ent.mesh.position.y,ent.mesh.position.z);
+    r.root.rotation.y=ent.mesh.rotation.y;
+    r.mixer.update(dt);
+  }catch(e){}
+}
 function loadRealAssets(){
   if(!THREE.GLTFLoader)return;
   try{
@@ -647,11 +703,17 @@ function loadRealAssets(){
         if(car){car.mesh.visible=false}         /* swap when it arrives mid-game */
       }catch(e){}
     },undefined,function(){});
-    /* --- animated soldier as the player character --- */
+    /* --- animated soldier: player rig + shared library for NPCs --- */
     loader.load(ASSETS.soldier,function(gltf){
       try{
         var model=gltf.scene;
         model.traverse(function(o){if(o.isMesh)o.castShadow=true});
+        npcClips=gltf.animations||[];
+        soldierLib=model;                       /* cache for NPC cloning */
+        /* drain the queue of peds/cops waiting for a body */
+        npcQueue.splice(0).forEach(function(job){
+          makeNPCFromSoldier(job.mesh,job.hex);
+        });
         var clone=THREE.SkeletonUtils.clone?THREE.SkeletonUtils.clone(model):model;
         var mixer=new THREE.AnimationMixer(clone);
         var actions={};
@@ -668,6 +730,24 @@ function loadRealAssets(){
         if(player)clone.position.copy(player.position);
         playerRig={root:clone,mixer:mixer,idle:idle,walk:walk,run:run,current:idle,
           lastYaw:null};
+      }catch(e){}
+    },undefined,function(){});
+    /* --- flamingo GLB doubles as harbor seagulls (white-tinted) --- */
+    loader.load(ASSETS.flamingo,function(gltf){
+      try{
+        gullLib=gltf.scene;
+        gullLib.traverse(function(o){
+          if(o.isMesh&&o.material&&o.material.color){
+            o.material=o.material.clone();
+            o.material.color=new THREE.Color(0xe8e8ea);
+          }
+          if(o.isMesh)o.castShadow=true;
+        });
+        gullQueue.splice(0).forEach(function(b){
+          b.add(gullLib.clone(true));
+          b.children[0].scale.setScalar(0.02);  /* flamingo is ~80 units tall */
+          b.children[0].position.y=-0.4;
+        });
       }catch(e){}
     },undefined,function(){});
   }catch(e){}
@@ -1691,6 +1771,9 @@ var peds=[];
     scene.add(mesh);
     peds.push({mesh:mesh,node:[ix,iz],target:[ix,iz],t:0,speed:rnd(1.6,2.6),pause:rnd(0,3),
       cool:0,bob:Math.random()*10});
+    /* become an animated Soldier when the GLB arrives */
+    npcQueue.push({mesh:mesh,hex:COATS[p%COATS.length]});
+    if(soldierLib)makeNPCFromSoldier(mesh,COATS[p%COATS.length]);
   }
 })();
 function pedNextNode(pd){
@@ -1738,8 +1821,8 @@ function pedUpdate(pd,dt,time){
   else{
     pd.mesh.position.set(fx+dx*pd.t,Math.abs(Math.sin(time*7+pd.bob))*0.05,fz+dz*pd.t);
     pd.mesh.rotation.y=Math.atan2(dx,dz);
-    animLimbs(pd.mesh,7,time+pd.bob,0.55);
   }
+  if(pd.mesh.userData.rig)rigUpdateFor(pd,dt,hooked?2.9:pd.speed);
 }
 
 /* ---------- cops ---------- */
@@ -1770,6 +1853,9 @@ function makeCop(ix,iz){
   scene.add(g);
   cops.push({mesh:g,cone:cone,coneMat:coneMat,node:[ix,iz],target:[ix,iz],t:0,pause:rnd(0,2),
     mode:'patrol',giveUpT:0,bob:Math.random()*10});
+  /* become an animated Soldier (navy-tinted) when the GLB arrives */
+  npcQueue.push({mesh:g,hex:0x2c3e5f});
+  if(soldierLib)makeNPCFromSoldier(g,0x2c3e5f);
 }
 (function(){makeCop(2,2);makeCop(4,4);makeCop(1,6);makeCop(6,3)})();
 function copNextNode(cp){
@@ -1798,7 +1884,6 @@ function copUpdate(cp,dt,time){
     cm.x+=vx2/(dist2||1)*sp;cm.z+=vz2/(dist2||1)*sp;
     cp.mesh.rotation.y=Math.atan2(vx2,vz2);
     cp.cone.visible=false;
-    animLimbs(cp.mesh,10,nowSec,0.7);
     if(dist2<1.35&&!inInterior){bustPlayer();}
     if(dist2>28){cp.giveUpT+=dt;if(cp.giveUpT>3.2){cp.mode='patrol';cp.t=0;copNextNode(cp);cp.giveUpT=0;sirenIfQuiet();}}
     else cp.giveUpT=0;
@@ -1819,11 +1904,14 @@ function copUpdate(cp,dt,time){
       else{
         cm.x=fx+dx*cp.t;cm.z=fz+dz*cp.t;
         cp.mesh.rotation.y=Math.atan2(dx,dz);
-        animLimbs(cp.mesh,6,nowSec+cp.bob,0.5);
       }
     }
   }
   cm.y=Math.abs(Math.sin(time*6+cp.bob))*0.04;
+  if(cp.mesh.userData.rig){
+    var copSpeed=(cp.mode==='chase')?6.8:(cp.pause>0?0:2.1);
+    rigUpdateFor(cp,dt,copSpeed);
+  }
 }
 function sirenIfQuiet(){if(!cops.some(function(c){return c.mode==='chase'}))sirenOff()}
 function spawnPatrol(){
@@ -2049,6 +2137,8 @@ var vinnie=null;
 function makeVinnie(){
   vinnie=pedMesh(0x7a2830);                    /* maroon suit, bad attitude */
   scene.add(vinnie);
+  npcQueue.push({mesh:vinnie,hex:0x7a2830});
+  if(soldierLib)makeNPCFromSoldier(vinnie,0x7a2830);
 }
 function vinnieShouldWork(){
   var h=S.min/60;
@@ -2065,6 +2155,10 @@ function vinnieUpdate(dt){
     var t=nowSec*0.4;
     vinnie.position.set(PLAZA.x+Math.sin(t)*6,0,PLAZA.z-10+Math.sin(t*2.3)*3);
     vinnie.rotation.y=Math.atan2(Math.cos(t),Math.cos(t*2.3));
+    if(vinnie.userData.rig){
+      rigUpdateFor({mesh:vinnie},dt,1.6);
+      if(!vinnieShouldWork())vinnie.visible=false;
+    }
   }else if(vinnie.visible){
     vinnie.visible=false;
   }
@@ -2079,6 +2173,8 @@ function makeCollector(){
   hat.position.y=1.95;collector.add(hat);      /* wide-brim. you know what that means */
   scene.add(collector);
   collector.position.set(PLAZA.x+4,0,PLAZA.z+10);
+  npcQueue.push({mesh:collector,hex:0x1c1c22});
+  if(soldierLib)makeNPCFromSoldier(collector,0x1c1c22);
 }
 function collectorActive(){
   return S.collector&&S.debt>0&&!S.ended;
@@ -2098,6 +2194,7 @@ function collectorUpdate(dt){
     collector.position.x+=vx/(dist||1)*sp;
     collector.position.z+=vz/(dist||1)*sp;
     collector.rotation.y=Math.atan2(vx,vz);
+    if(collector.userData.rig)rigUpdateFor({mesh:collector},dt,2.6);
   }else{
     /* he catches you */
     var got=Math.min(S.cash+S.chips+S.hooch*45,Math.round(S.debt*0.35)+40);
@@ -3199,6 +3296,7 @@ var gulls=[],freighter=null;
 (function(){
   for(var k=0;k<6;k++){
     var b=new THREE.Group();
+    /* placeholder body (replaced by the Flamingo GLB when it arrives) */
     var bod=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.14,0.22),
       new THREE.MeshLambertMaterial({color:0xd8d8d8}));
     b.add(bod);
@@ -3208,6 +3306,7 @@ var gulls=[],freighter=null;
     wr.position.set(0.3,0.08,0);b.add(wr);
     scene.add(b);
     gulls.push({m:b,a:Math.random()*Math.PI*2,r:rnd(20,60),h:rnd(10,20),sp:rnd(0.25,0.5),ph:Math.random()*9});
+    gullQueue.push(b);                          /* upgraded to the GLB bird later */
   }
   freighter=new THREE.Group();
   var hull=new THREE.Mesh(new THREE.BoxGeometry(10,3,26),
