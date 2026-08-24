@@ -157,6 +157,11 @@ const THREE={
   MeshBasicMaterial:class{constructor(o){Object.assign(this,mat(o))}},
   MeshLambertMaterial:class{constructor(o){Object.assign(this,mat(o))}},
   MeshPhongMaterial:class{constructor(o){Object.assign(this,mat(o))}},
+  MeshStandardMaterial:class{constructor(o){const m=mat(o);this.roughness=1;
+    this.metalness=0;Object.assign(this,m);
+    if(o&&o.normalMap)this.normalMap=o.normalMap;
+    if(o&&o.roughness!==undefined)this.roughness=o.roughness;
+    if(o&&o.metalness!==undefined)this.metalness=o.metalness;}},
   PointsMaterial:class{constructor(o){Object.assign(this,{opacity:1},o)}},
   HemisphereLight:class{constructor(){Object.assign(this,baseObj());this.intensity=1}},
   DirectionalLight:class{constructor(){Object.assign(this,baseObj());this.intensity=1;
