@@ -369,15 +369,21 @@ relocate(607,-1.2,0);pressE();
   storage[SAVE]=JSON.stringify(d);click('continueBtn');pump(3);pressE(); }
 click('bjBet50');
 { /* deal until a hand actually reaches the player phase (blackjacks
-     auto-settle and never show the marked-deck line) */
-  for(let tries=0;tries<8;tries++){
+     auto-settle and never show the marked-deck line). Re-bet each round;
+     stop the moment the marked-deck line shows. */
+  for(let tries=0;tries<12;tries++){
+    if(txt('bjMsg').indexOf('Marked deck:')===0)break;
     click('bjDeal');pump(4);
     if(txt('bjMsg').indexOf('Marked deck:')===0)break;
     const snap=base.__MARKER.bjSnap();
     if(snap.phase==='player'){click('bjStand')}
     pump(80);                                      /* let the hand finish */
     if(base.__MARKER.bjSnap().phase!=='bet'){
-      key('escape');pump(2);pressE();pump(2);click('bjBet50');
+      key('escape');pump(2);pressE();pump(2);
+      const chipsNow=base.__MARKER.bjSnap().chips;
+      if(chipsNow<50){const d=saveState();d.chips=300;
+        storage[SAVE]=JSON.stringify(d);click('continueBtn');pump(3);pressE();pump(2)}
+      click('bjBet50');
     }
   }
 }

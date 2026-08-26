@@ -666,7 +666,7 @@ function save(){
       washed:S.washed,cap:S.cap,diceLeft:S.diceLeft,soldOnce:S.soldOnce,brewedOnce:S.brewedOnce,playedBJ:S.playedBJ,
       runner:(S.runner||false),
       debt:S.debt,defaults:S.defaults,collector:S.collector,rival:S.rival,
-      pos:p,yaw:round2(yaw),
+      pos:p,yaw:round2(yaw),tut:S.tut,
       car:(car&&!car.parked)?null:{x:round2(car.mesh.position.x),z:round2(car.mesh.position.z),ry:round2(car.mesh.rotation.y)}}));
   }catch(e){}
 }
@@ -684,6 +684,7 @@ function loadSave(){
     if(d.runner!==undefined)S.runner=d.runner;
     if(d.rival)S.rival=d.rival;
     if(d.upgrades)S.upgrades=d.upgrades;
+    if(d.tut!==undefined)S.tut=d.tut;
     if(d.pos)S.pos=d.pos;
     if(d.yaw!==undefined)S.yaw=d.yaw;
     if(car&&d.car&&typeof d.car.x==='number'){
@@ -694,7 +695,41 @@ function loadSave(){
 }
 function wipe(){try{localStorage.removeItem(SAVEKEY)}catch(e){}}
 
-/* ============================================================ audio */
+/* ---------- TUTORIAL: pistas contextuales una sola vez por partida ---------- */
+window.__tutShown=window.__tutShown||{};
+function tutOnce(id,msg){
+  try{
+    if(S.tut&(1<<id))return;
+    S.tut|=1<<id;
+    window.__tutShown[id]=true;
+    toast(msg,'info');
+    save();
+  }catch(e){}
+}
+var TUT={
+  move:'WASD para moverte · ratón cámara · SHIFT corre · E interactúa con lo que brille',
+  still:'Ese humo del callejón es el STILL. Acércate y pulsa E — ahí se fabrica el hooch.',
+  sell:'Llevas botellas. Camina cerca de la gente: si se enganchan (etiqueta dorada), acércale y pulsa E.',
+  car:'Pulsa E junto al coche para conducirlo. W acelera, S frena.',
+  club:'La puerta iluminada es LUCKY NINE: lava el dinero sucio y juega. La entrada está en la fachada.',
+  rent:'⚠ El alquiler vence pronto. Sin cash, el cobrador te visita.',
+  brew:'Primer lote en marcha. Espera ~25s, recoge con E cuando hierva.'
+};
+function tutTick(){
+  if(!player||S.ended)return;
+  var px=player.position.x,pz=player.position.z;
+  if(!window.__tutShown[0])tutOnce(0,TUT.move);
+  /* still cercano */
+  if(!window.__tutShown[1]){
+    var dxs=px-STILL.x,dzs=pz-STILL.z;
+    if(dxs*dxs+dzs*dzs<20*20)tutOnce(1,TUT.still);
+  }
+  /* primera venta hecha -> enseñar coche */
+  if(S.soldOnce&&!window.__tutShown[3])tutOnce(3,TUT.car);
+  if(S.brewedOnce&&!window.__tutShown[6])tutOnce(6,TUT.brew);
+  /* alquiler próximo */
+  if(!window.__tutShown[5]&&S.rentPending&&S.rentDueDay-S.day<=1)tutOnce(5,TUT.rent);
+}
 var AC=null,master=null,siren=null;
 var muted=false,amb=null,clubLoop=null;
 function ac(){
@@ -895,6 +930,19 @@ function footstep(sprint){
   if(now-lastStep<(sprint?0.31:0.44))return;
   lastStep=now;
   beep(rnd(72,88),0.05,'sine',0.10);
+}
+function horn(){
+  var a=ac();if(!a)return;
+  try{
+    [[440,0.14],[554,0.12]].forEach(function(hh){
+      var o=a.createOscillator(),g=a.createGain();
+      o.type='square';o.frequency.value=hh[0];
+      g.gain.setValueAtTime(0.06,a.currentTime);
+      g.gain.setValueAtTime(0.06,a.currentTime+hh[1]);
+      g.gain.exponentialRampToValueAtTime(0.001,a.currentTime+hh[1]+0.05);
+      o.connect(g);g.connect(master);o.start();o.stop(a.currentTime+hh[1]+0.08);
+    });
+  }catch(e){}
 }
 window.addEventListener('pointerdown',function(){ac();musicPump()},{once:true});
 
@@ -3551,6 +3599,7 @@ window.addEventListener('keydown',function(e){
     if(nearestPed(3.2)){sellHooch()}
   }
   if(k==='m'&&!panelOpen()){toggleMute()}
+  if(k==='h'&&car&&!car.parked&&!panelOpen())horn();   /* claxon al volante */
   if(k==='v'&&!panelOpen()){
     fp=!fp;applyFpVis();
     toast(fp?'First-person. Press V for third.':'Third-person. Press V for first.','info');
@@ -3997,6 +4046,15 @@ function start(fresh){
           }
         }catch(e){}
       })['catch'](function(){});
+      /* cruiser aparcado en el precinto + camioneta de reparto en el muelle */
+      VehicleFactory.spawn('police',{length:4.8}).then(function(m){
+        try{m.position.set(POLICE.x+2,0,POLICE.z+16);m.rotation.y=0.35;
+          m.userData.dynamic=true;scene.add(m);world.cruiser=m}catch(e){}
+      })['catch'](function(){});
+      VehicleFactory.spawn('delivery',{length:5.0}).then(function(m){
+        try{m.position.set(-4,0,120);m.rotation.y=1.55;
+          m.userData.dynamic=true;scene.add(m)}catch(e){}
+      })['catch'](function(){});
     }catch(e){}
   }
   if(!vinnie)makeVinnie();
@@ -4020,7 +4078,8 @@ $('endBtn').onclick=function(){
   S.cash=150;S.chips=0;S.hooch=0;S.day=1;S.min=8*60;S.heat=0;S.rep=0;
   S.rentPending=false;S.rentAmt=350;S.rentDueDay=4;
   S.brew='idle';S.brewT=0;S.lastQ=0;S.barStock=0;S.washed=0;S.cap=300;S.diceLeft=0;
-  S.crateDay=0;
+  S.crateDay=0;S.tut=0;
+  window.__tutShown={};
   S.runner=false;S.runnerHour=0;
   S.upgrades={coil:false,shoes:false,dice:false,deck:false,contract:false,ledger:false,
     engine:false,suit:false,scanner:false,pawn:false,bubbles:false};
@@ -4063,6 +4122,7 @@ function loop(t){
   });
     vinnieUpdate(dt);
     collectorUpdate(dt);
+    tutTick();
     clubAudioTick();
     trafficTick(dt);
     musicPump();                                   /* schedule upcoming beats */
