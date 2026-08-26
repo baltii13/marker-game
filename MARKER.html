@@ -342,6 +342,7 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/environments/RoomEnvironment.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/utils/SkeletonUtils.js"></script>
+<script src="assets/models/vehicle-loader.js"></script>
 <script>window.THREE&&window.THREE.EffectComposer||document.write('<script src="https://unpkg.com/three@0.147.0/examples/js/postprocessing/EffectComposer.js"><\\/script><script src="https://unpkg.com/three@0.147.0/examples/js/postprocessing/RenderPass.js"><\\/script><script src="https://unpkg.com/three@0.147.0/examples/js/postprocessing/MaskPass.js"><\\/script><script src="https://unpkg.com/three@0.147.0/examples/js/postprocessing/ShaderPass.js"><\\/script><script src="https://unpkg.com/three@0.147.0/examples/js/shaders/FXAAShader.js"><\\/script><script src="https://unpkg.com/three@0.147.0/examples/js/postprocessing/UnrealBloomPass.js"><\\/script><script src="https://unpkg.com/three@0.147.0/examples/js/environments/RoomEnvironment.js"><\\/script><script src="https://unpkg.com/three@0.147.0/examples/js/loaders/GLTFLoader.js"><\\/script><script src="https://unpkg.com/three@0.147.0/examples/js/utils/SkeletonUtils.js"><\\/script>');</script>
 <script>
 (function(){
@@ -619,7 +620,7 @@ var ASSETS={
   car:'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r147/examples/models/gltf/ferrari.glb',
   soldier:'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r147/examples/models/gltf/Soldier.glb',
   flamingo:'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r147/examples/models/gltf/Flamingo.glb',
-  /* tu PJ elegido con paste_character.py (swat, witch, punk, ...). */
+  /* tu PJ elegido con paste_character.py (swat, witch, criminal...). */
   playerChar:'assets/models/characters/current_player.glb'
 };
 var playerRig=null;   /* {root,mixer,actions:{idle,walk,run},current} */
@@ -711,11 +712,22 @@ function pickClip(acts,names){
   return null;
 }
 function buildRigFromModel(model,clips){
-  /* normaliza cualquier modelo: altura ~1.8u y clips por nombre */
+  /* normaliza cualquier modelo: altura ~1.8u y clips por nombre.
+     Los GLB de crowd vienen con la malla rotada -90 en el nodo raiz
+     (Y plano) -> se detecta y se endereza antes de medir. */
   model.traverse(function(o){if(o.isMesh)o.castShadow=true});
   try{
     var bb=new THREE.Box3().setFromObject(model);
-    var h=bb.max.y-bb.min.y;
+    var size=new THREE.Vector3();bb.getSize(size);
+    if(size.y<size.z*0.5&&size.y<1){          /* tumbado: gira X+90 */
+      var fix=new THREE.Group();
+      var inner=model.children.slice(0);
+      inner.forEach(function(c){model.remove(c);fix.add(c)});
+      fix.rotation.x=Math.PI/2;
+      model.add(fix);
+      bb.setFromObject(model);bb.getSize(size);
+    }
+    var h=size.y;
     if(h>0.01&&isFinite(h))model.scale.setScalar(1.85/h);
   }catch(e){}
   var mixer=new THREE.AnimationMixer(model);
@@ -1878,6 +1890,61 @@ var peds=[];
     if(soldierLib)makeNPCFromSoldier(mesh,COATS[p%COATS.length]);
   }
 })();
+/* ---------- CROWD: peatones con los GLB estaticos de Quaternius ----------
+   Male_Walking / Female_Standing / etc. vienen "horneados" (sin clips):
+   cada peaton recibe un modelo distinto en una POSE real (andando,
+   de pie, mirando el movil...) y se desplaza por la retícula. */
+var crowdLibs=[];
+(function loadCrowd(){
+  if(!THREE.GLTFLoader)return;
+  try{
+    var ld=new THREE.GLTFLoader();
+    ['Male_Walking','Female_Walking','Male_Standing','Female_LookingUp',
+     'Male_Standing_Hips','Woman_Standing_Waving'].forEach(function(nm){
+      ld.load('assets/models/characters/quaternius_crowd/'+nm+'.glb',
+        function(gltf){
+          try{
+            var m=gltf.scene;
+            m.traverse(function(o){if(o.isMesh)o.castShadow=true});
+            /* normaliza altura a ~1.8u */
+            var bb=new THREE.Box3().setFromObject(m);
+            var sz=new THREE.Vector3();bb.getSize(sz);
+            if(sz.y<sz.z*0.5&&sz.y<1){
+              var fix=new THREE.Group();
+              m.children.slice(0).forEach(function(c){m.remove(c);fix.add(c)});
+              fix.rotation.x=Math.PI/2;m.add(fix);
+              bb.setFromObject(m);bb.getSize(sz);
+            }
+            if(sz.y>0.01&&isFinite(sz.y))m.scale.setScalar(1.85/sz.y);
+            crowdLibs.push(m);
+            /* upgrade: hasta ~14 peatones se convierten en gente real;
+               el resto queda en Soldier animado. Sin solapamientos:
+               swapPedToCrowd OCULTA el placeholder que reemplaza. */
+            var quota=Math.min(14,crowdLibs.length*3);
+            var done=0;
+            peds.forEach(function(pd){
+              if(done>=quota)return;
+              if(pd.mesh.userData.rig||pd.mesh.userData.crowd)return;
+              if(!pd.mesh.visible)return;
+              swapPedToCrowd(pd,m);
+              done++;
+            });
+          }catch(e){}
+        },undefined,function(){});
+    });
+  }catch(e){}
+})();
+function swapPedToCrowd(pd,libModel){
+  try{
+    var clone=libModel.clone(true);
+    clone.position.copy(pd.mesh.position);
+    clone.rotation.copy(pd.mesh.rotation);
+    clone.userData.dynamic=true;
+    pd.mesh.parent.add(clone);
+    pd.mesh.visible=false;                    /* REPLACE, no overlap */
+    pd.mesh.userData.crowd=clone;
+  }catch(e){}
+}
 function pedNextNode(pd){
   var dx=[-1,1,0,0],dz=[0,0,-1,1],dirs=[];
   for(var k=0;k<4;k++){
@@ -1925,6 +1992,12 @@ function pedUpdate(pd,dt,time){
     pd.mesh.rotation.y=Math.atan2(dx,dz);
   }
   if(pd.mesh.userData.rig)rigUpdateFor(pd,dt,hooked?2.9:pd.speed);
+  /* los crowd (GLB horneado) siguen al placeholder logico */
+  var cw=pd.mesh.userData.crowd;
+  if(cw){
+    cw.position.set(pd.mesh.position.x,0,pd.mesh.position.z);
+    cw.rotation.y=pd.mesh.rotation.y;
+  }
 }
 
 /* ---------- cops ---------- */
@@ -3553,11 +3626,20 @@ function skyTick(){
   var carBeamOn=nightAmount()>0.35&&quality!=='low'&&car&&!car.parked;
   carBeams.forEach(function(bm){bm.intensity=carBeamOn?1.6:0});
   /* GLB car shell follows the logical car body (position + heading) */
-  if(world.realCar&&world.realCar.shell&&world.realCar.shell.userData.followCar&&car){
-    world.realCar.shell.visible=!car.mesh.visible;
-    world.realCar.shell.position.set(car.mesh.position.x,0,car.mesh.position.z);
-    world.realCar.shell.rotation.y=car.mesh.rotation.y;
+  if(world.realCar&&world.realCar.shell&&car){
+    var rc=world.realCar.shell;
+    rc.visible=true;                            /* the real car IS the car now */
+    rc.position.set(car.mesh.position.x,0,car.mesh.position.z);
+    rc.rotation.y=car.mesh.rotation.y;
   }
+  /* traffic GLB shells follow their logical cars */
+  cars.forEach(function(tc){
+    var rm=tc.mesh.userData.realModel;
+    if(rm&&tc.mesh.visible===false){            /* only after a successful swap */
+      rm.position.copy(tc.mesh.position);
+      rm.rotation.y=tc.mesh.rotation.y;
+    }
+  });
   /* objective beacon follows the current goal */
   if(world.beacon){
     var bt=beaconTarget();
@@ -3599,6 +3681,41 @@ function start(fresh){
   buildShopInteriors();                        /* built once; triggers persist */
   if(!_frozenOnce){_frozenOnce=true;freezeStatics()}
   loadRealAssets();
+  /* VehicleFactory: coches reales (Kenney CC0 + Quaternius CC0) */
+  if(window.VehicleFactory){
+    try{
+      VehicleFactory.init();
+      var TRAFFIC_CAST=['q_sedan','q_sedan_teal','q_taxi','q_suv','sedan',
+        'suv','hatchback','q_sports','van','delivery'];
+      var trafficDone=0;
+      cars.forEach(function(tc,ci){
+        if(trafficDone>=8)return;
+        var key=TRAFFIC_CAST[ri(0,TRAFFIC_CAST.length-1)];
+        VehicleFactory.spawn(key,{length:4.4}).then(function(model){
+          if(trafficDone>=8||S.ended)return;
+          model.position.copy(tc.mesh.position);
+          model.rotation.y=tc.mesh.rotation.y;
+          model.userData.dynamic=true;
+          scene.add(model);
+          tc.mesh.visible=false;              /* REPLACE the code car */
+          tc.mesh.userData.realModel=model;
+          trafficDone++;
+        })['catch'](function(){});
+      });
+      /* tu coche jugable: un deportivo de verdad */
+      var playerKey=S.upgrades.engine?'q_sports':'q_sedan_teal';
+      VehicleFactory.spawn(playerKey,{length:4.6}).then(function(model){
+        try{
+          world.realCar={shell:model,follow:true};
+          if(car){
+            car.mesh.visible=false;
+            model.position.copy(car.mesh.position);
+            model.rotation.y=car.mesh.rotation.y;
+          }
+        }catch(e){}
+      })['catch'](function(){});
+    }catch(e){}
+  }
   if(!vinnie)makeVinnie();
   if(!collector)makeCollector();
   startAmbience();
